@@ -1,8 +1,12 @@
-// No public landing page: every user arrives on their own /c/<token> link.
+import { randomBytes } from "node:crypto";
+import Chat from "./c/[token]/Chat";
+
+export const dynamic = "force-dynamic";
+
 export default function Home() {
-  return (
-    <main style={{ display: "grid", placeItems: "center", minHeight: "100dvh", padding: 24, textAlign: "center" }}>
-      <p style={{ color: "#575757" }}>Astrolokal</p>
-    </main>
-  );
+  // Generate a temporary token that cannot collide with an existing user.
+  // The onboarding API creates the real user and token.
+  const onboardingToken = randomBytes(18).toString("hex");
+
+  return <Chat token={onboardingToken} />;
 }
