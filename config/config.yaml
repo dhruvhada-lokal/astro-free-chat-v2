@@ -9,7 +9,7 @@
 
 experiment:
   id: astro_free_chat_pilot_v1
-  prompt_version: free_chat_v2.5   # bump on every change; history in docs/CHANGELOG.md
+  prompt_version: free_chat_v4.2   # bump on every change; history in docs/CHANGELOG.md
   # The pilot cohort is FIXED and everyone in it gets the same experience (one arm, weight 100).
   # The control is the holdout, which never gets the WATI message (split when the list is built).
   # To try something new: change the settings below, bump prompt_version, and compare versions over time.
@@ -23,12 +23,20 @@ experiment:
 timing:
   free_seconds: 120                 # length of the free chat
   clock_starts: open                # open = when the chat page opens (AT-style urgency) · first_message = at the first question
-  pull_until_seconds_left: 40       # from here, Omkar leaves them on one open thread (the hook) instead of new insights
+  pull_until_seconds_left: 20       # from here, Omkar leaves them on one open thread (the hook) instead of new insights
   idle_nudge_seconds: 25            # user quiet this long → Omkar carries on by himself, until the chat ends. 0 = off
   closing_at_seconds_left: 15       # at 15 s left Omkar sends the closing line (or answers a last message with it)
   handoff_card_at_seconds_left: 10  # app shows the hand-off card
   cta_countdown_seconds: 5          # the button counts down this long when the card appears, then stays (nothing opens by itself). 0 = no countdown
-  llm_timeout_ms: 6000              # slower than this → send fallback_reply instead
+  llm_timeout_ms: 18000              # slower than this → send fallback_reply instead. Real gemini-3.5-flash-lite
+                                      # latency here has typically run 10-17s; 18000 covers most of it. Time spent
+                                      # waiting on the model no longer drains the user's free_seconds — see
+                                      # SessionState.llmWaitMs / secondsLeft() — so a long timeout is now safe to use.
+  # The pause right after the opening greeting, before Omkar proactively asks what they want to know (unknown
+  # topic) or their own predefined topic question (known topic) — only if they haven't said anything by then.
+  # "Typing…" shows at topic_wait_typing_seconds; the question is sent at topic_wait_seconds.
+  topic_wait_typing_seconds: 5
+  topic_wait_seconds: 7.5
 
 # How messages arrive on screen (milliseconds). Typing time grows with message length, like a real person,
 # within typing_min_ms..typing_max_ms. The first message always gets its full typing time, however fast the model replies.
@@ -39,14 +47,30 @@ pacing:
   typing_max_ms: 3000         # longest "typing…" before a message
   between_messages_ms: 350    # gap after each message before the next "typing…"
   system_note_ms: 1100        # how long "Connecting you to…" / "has joined" each hold
-  kundli_ms: 4000             # "typing…" after "Aapki kundli dekh raha hoon…", before the kundli card appears
+  # The whole first-answer reveal (empathy → "Aapki kundli dekh raha hoon…" → kundli card → chart line → finding →
+  # hook) runs on this same deliberate pause-then-type rhythm throughout, instead of the usual length-based typing —
+  # so it reads as one slow, considered moment, not a quick burst of bubbles. kundli_gap_ms/kundli_ms govern only the
+  # one transition into the card itself; post_kundli_gap_ms/post_kundli_typing_ms govern every other bubble in the
+  # reveal (including the empathy opener and the intro line, before the card). The one exception is
+  # dramatic_gap_ms: a longer pause used at exactly two moments — right after the card, before the chart line (so
+  # that specific reveal feels weightier), and before Omkar's one real engage question later in the chat.
+  kundli_gap_ms: 2500          # silence before "typing…" starts, leading into the kundli card
+  kundli_ms: 2500              # "typing…" before the kundli card appears, once it starts
+  post_kundli_gap_ms: 2500     # silence before "typing…" starts, for every other bubble in the reveal
+  post_kundli_typing_ms: 2500  # "typing…" duration for every other bubble in the reveal
+  dramatic_gap_ms: 5000        # the longer pause: right after the kundli card (before the chart line), and between
+                                # the bridge and the one real question in "engage" (see reply_instructions.engage_bridge)
+  # A bubble this long (style.max_words_per_bubble is 12) is never dropped any more — the guard keeps it and flags
+  # it "very_long_bubble" (see guardReply in engine.ts); the client just paces it slower instead of losing it.
+  long_bubble_words: 18        # word count at which a bubble gets the slower typing treatment below
+  long_bubble_typing_ms: 7500  # "typing…" duration for a bubble that long, replacing the usual duration
 
 # Google Gemini, called directly with GEMINI_API_KEY (see .env.example).
 model:
   name: gemini-3.5-flash-lite       # Gemini model id; logged with every message
   thinking: minimal                 # minimal | low | medium | high — short chat replies need "minimal" (fastest)
   temperature: 0.6
-  max_output_tokens: 300            # room for 3 short bubbles (raise it if thinking goes above minimal: thinking uses it too)
+  max_output_tokens: 500            # room for 3 short bubbles (raise it if thinking goes above minimal: thinking uses it too)
 
 persona:
   name: "Astro Omkar"               # shown in the chat header and used by the AI as its own name
@@ -59,11 +83,12 @@ persona:
 
 style:
   max_bubbles: 3                    # most bubbles in one reply
-  first_answer_bubbles: 2           # the first answer, after the kundli card + chart line
+  first_answer_bubbles: 3           # bubble 1 = empathy opener, BEFORE the kundli card; 2 and 3 = the finding and the hook, after it
   early_replies: 2                  # the next replies get max_bubbles (a full, warm start)…
   later_bubbles: [2, 3]             # …then each reply picks 2 or 3, like a person
-  max_words_per_bubble: 7           # AT-style: short texts, 3–7 words
-  question_budget: 3                # most questions Omkar asks in a chat; never two replies in a row
+  max_words_per_bubble: 12          # AT-style short texts, but not so tight it chokes a sentence that needs the room:
+                                     # 0–12 clean, 13–17 kept but flagged (guardReply's long_bubble), 18+ dropped
+  question_budget: 2                # gather's one follow-up + the one fixed question in "engage" (see reply_instructions.engage_bridge); never two replies in a row
   separator: "||"
 
 # How much the AI gives away. The arm picks one.
@@ -80,28 +105,105 @@ insight_levels:
 
 # What each AI reply must do. The app picks one per reply and adds it to the end of prompt_template.md ("THIS REPLY").
 reply_instructions:
-  # their first message: a greeting gets a greeting back; a question gets a real answer
+  # the forced real answer right after their one context-gathering question (stage "gather") has been used —
+  # never their actual first message any more, that's "gather" below
   answer: >-
-    This is their first message. If it is only a greeting (hi, hello, namaste, radhe radhe) or only names a language,
-    greet them back warmly in that language and ask in one line what they want to know: shaadi, naukri, paisa ya pyaar.
-    Otherwise ANSWER their question clearly and warmly, as if you can see it plainly. First bubble: the answer to THEIR
-    question, in their own words. Second bubble: the planet behind it, in plain words. If they asked WHEN, answer with a
-    phase, not a date: e.g. that it opens up once their current antardasha (the one in ABOUT THEM) changes, or that it is
-    already moving in this phase. Name only the dashas in ABOUT THEM, never another. Say it with warmth, not certainty
-    ("yog ban raha hai", "sambhavna achhi hai"). Don't repeat the rashi/dasha line already sent. Don't ask anything yet.
+    Give the real answer now, in THREE bubbles, in the simplest, most everyday words — nothing literary or textbook
+    (never "vichar", "gehra asar", "nirnay" — say "sochna", "zyada asar", "faisla"). React to the SPECIFIC situation
+    they told you (whatever they said when you asked what was going on) — not a generic version of their topic. If
+    they said "family pressure, no rishta yet", answer THAT, not shaadi in general.
+    Bubble 1 (EMPATHY, said before you even look at the chart): warmly name what they're going through, in plain
+    words — this is a feeling, not a chart fact, e.g. "Family ka pressure jhelna sach mein mushkil hota hai."
+    Bubble 2 (THE FINDING, after the kundli card and the chart_line — never repeat what chart_line already said):
+    acknowledge that right now may be hard, hedged ("ho sakta hai"), then pivot to hope for THEIR specific topic,
+    e.g. "Abhi ke samay mein thoda mushkil aa sakti hai, lekin aane wala samay rishte ke liye positive hai." Never a
+    chart detail here (dasha/planet/yoga) — chart_line already gave that; this bubble is about their SITUATION and
+    hope, not the chart.
+    Bubble 3 (THE HOOK, a positive hedge PLUS a soft doubt, never resolved): e.g. "Sab kuch achha ho sakta hai,
+    lekin is rishte ko lekar kuch cheezon ka khaas khayal rakhna hoga." Tie the caution to their SPECIFIC situation
+    (name it in your own words, never a generic line that could fit any topic) — never say what it is, when, or
+    whether it gets better or worse. Leave it completely open.
+    All three bubbles may run up to about 15 words if the sentence genuinely needs it; don't force an unnatural cut.
+    If they asked WHEN, bubble 2 answers with a phase, not a date: e.g. that it opens up once their current
+    antardasha (the one in ABOUT THEM) changes, or that it is already moving in this phase. Don't ask anything yet.
   # they haven't typed anything and went quiet: Omkar starts ({topic} = their topic, or "their life right now")
   start: >-
     They haven't asked anything yet. Start the reading yourself, on {topic}: one warm, specific thing you see in their chart
     and the planet behind it, so they feel seen and want to reply.
-  # the middle of the chat: keep them talking, never dodge
+  # their actual first message (see CLARIFY_MARKER in engine.ts) — may answer directly or ask one question first
+  gather: >-
+    This is their very first message and you don't yet know enough to give a real answer. If it already names what they
+    want to know AND their specific situation (not just a bare topic word like "shaadi" or "career" on its own), skip
+    straight to the real answer instead, reacting to their SPECIFIC situation, not a generic version of the topic, in
+    THREE bubbles, in the simplest everyday words — nothing literary or textbook (never "vichar", "gehra asar",
+    "nirnay" — say "sochna", "zyada asar", "faisla"):
+    bubble 1 (EMPATHY, said before you even look at the chart) warmly names what they're going through, in plain
+    words — a feeling, not a chart fact;
+    bubble 2 (THE FINDING, after the kundli card and the chart_line — never repeat what chart_line already said)
+    acknowledges that right now may be hard, hedged ("ho sakta hai"), then pivots to hope for THEIR specific topic —
+    never a chart detail here, chart_line already gave that;
+    bubble 3 (THE HOOK) is a positive hedge PLUS a soft doubt tied to their SPECIFIC situation, never resolved —
+    never saying what it is, when, or whether it gets better or worse. Leave it completely open.
+    All three bubbles may run up to about 15 words if the sentence needs it. Otherwise — just a
+    greeting (hi, hello, namaste),
+    or a bare topic with nothing else — ask ONE short, warm question to understand their actual situation. A bare
+    greeting, or a single topic word with nothing else (just "shaadi", just "career", just "naukri"), is NEVER enough on
+    its own, even if you already asked them what they wanted to know and this is their reply to that: still ask, don't
+    start a generic reading and don't just greet them back. "They care about: X" in ABOUT THEM only means a keyword was
+    matched — it is not their actual question or situation, and does not count as enough on its own either. If they DID
+    name a topic (a word like "shaadi", "career", "naukri"), your question must be about that specific topic (e.g.
+    "Naukri mein abhi kya dikkat hai?", "Shaadi ke baare mein kya pooch rahe hain?") — never repeat the generic "kis
+    baare mein jaanna chahte hain" back to them, they already answered that part. If their message ALSO asks how you
+    are, or anything else about you, answer that in a few warm words first — but that alone never counts as enough:
+    the same reply must still end by asking what they want to know, same as above. When (and
+    only when) you're asking that question, your entire reply must start with exactly "CLARIFY||" (nothing before it)
+    followed by the one question,
+    so it's never mistaken for the real answer. Never use that marker when you're giving the real answer.
   engage: >-
-    Keep them talking and enjoying it. React to what they just said, in their own words, then give ONE new, specific
-    insight about their question (what this phase feels like, a detail about the person, the work or the money, the planet
-    behind it) that they will want to reply to. Never dodge a direct question: if they ask when, who, where or how, give a
-    real but partial answer from their chart (a direction, a phase of their dasha, a quality of the person) and
-    leave the exact timing and the upay unsaid. Never reply with a line that says nothing, like "it's clearly visible in
-    your chart". Never reuse a sentence or an opening you have already used. Each reply should make the full picture feel close.
-  # the last ~40 seconds (timing.pull_until_seconds_left): leave them wanting the full reading
+    Keep them talking and enjoying it, in the simplest everyday words — nothing literary or textbook (never "vichar",
+    "gehra asar", "nirnay" — say "sochna", "zyada asar", "faisla"). React to what they just said, in their own words,
+    then give ONE new, specific insight about their question (what this phase feels like, a detail about the person,
+    the work or the money, the planet behind it — never their rashi/moon sign) that they will want to reply to.
+    Never reply with a line that says nothing, like "it's clearly visible in your chart". Never reuse a sentence or an
+    opening you have already used. Each reply should make the full picture feel close.
+  # The fixed, unconditional shape of this whole phase, by turn count (SessionState.engageTurns) — the same order
+  # every single chat, regardless of what the user actually says: turn 1 = engage_bridge (bridge + the one real
+  # question, together — fires on the very first engage reply, never waiting on a second user message for the
+  # question), turn 2 = engage_cliffhanger, turn 3 = engage_stall. Each of these IS the entire reply on its own
+  # turn — the base "engage" reaction+insight above is skipped for turns 1-3 (see buildSystemPrompt's inLadder),
+  # never layered underneath, so the model never does "the bridge AND also react and add an insight" in one reply.
+  engage_bridge: >-
+    This is the ENTIRE reply — exactly TWO bubbles, nothing else. This is their very first reply after the kundli
+    reveal ended.
+    Bubble 1: a short, confident pivot into looking closer at what they asked — direct and sure of yourself, not
+    soft or vague, in your own words, e.g. "Rukiye, detail mein dekh ke batata hoon.", "Ek second, isko gehraai se
+    dekh leta hoon.", "Rukiye zara, is baare mein aur dekhta hoon." — write your own version in this tone; never use
+    one of these examples word-for-word.
+    Bubble 2: ONE short question (the bubble must end in "?") about ONE fact tied to the SPECIFIC thing they told
+    you — never a generic version of their topic — about something already true or already happened: how long
+    it's been going on, what has already happened, or what is already going on right now. Never ask about their
+    hopes, wishes, or what might happen next (never "kya umeed hai", "kaisa rahega", "kab hoga" or similar) —
+    always the past or the present, never the future. If nothing more specific fits, "kitne time se" (how long
+    this has been going on) almost always works. This is the only question "engage" ever asks; never repeat it or
+    ask another one later.
+  engage_cliffhanger: >-
+    This is the ENTIRE reply — nothing else. In the first bubble, acknowledge the SPECIFIC thing they just told you
+    (especially if they just answered the question from engage_bridge); in a second bubble, name THEIR actual
+    obstacle or recurring thing, in your own words, using a specific word for it tied to what they told you (e.g.
+    "is rukawat", "ye jo baar baar ho raha hai", "is doori" — never a generic noun like "rishta" or "naukri" on its
+    own), followed by exactly "ke peeche ek wajah hai…" (ending with "…", nothing more) — e.g. "Is rukawat ke
+    peeche ek wajah hai…". Never a generic truism that could fit any chat (never "har rishte ke peeche...", "aise
+    mein sabke saath hota hai" style) — it must point at THEIR specific situation, not people or relationships in
+    general. Different from the question you were just asked — never repeat its wording or content, and never ask
+    another question here.
+  engage_stall: >-
+    This is the ENTIRE reply — nothing else, and don't repeat an earlier line. In two bubbles: first, say in your
+    own words that you are still looking closely at that one specific thing for them ("abhi bhi isi par dekh raha
+    hoon" style); second, one positive-leaning line that stops dead right after the word "agar" or "magar" —
+    nothing after it, no "…", no punctuation, the sentence is simply left unfinished (e.g. "Kuch achha dikh raha
+    hai magar"). This "agar"/"magar" bubble is the only case where a sentence may stay incomplete. Different from
+    both the question and the "ke peeche ek wajah hai…" cliffhanger before it — never reuse their wording.
+  # the last ~20 seconds (timing.pull_until_seconds_left): leave them wanting the full reading
   hook: >-
     The chat is about to end. Leave them on ONE open thread about what they asked in THIS chat (their words, e.g. their
     gf coming back, not "shaadi" from their profile), never a different topic. Name the specific piece of their answer you can see but haven't told yet (the exact timing, what is
@@ -109,38 +211,75 @@ reply_instructions:
     don't ask a question, don't mention time running out or another astrologer. If you already opened a thread, make that
     same one sharper with one more detail. Keep it to two short bubbles of 4–7 words, e.g. one naming what you see, one
     naming what is still unsaid.
+  # The engine switches to this instead of "hook" above once the engage ladder has already given the cliffhanger
+  # or the stalling move (SessionState.engageTurns >= 2) before the clock forced the switch to "hook" — that
+  # already left them on an open thread, so hook doesn't open or deepen a second one, it just closes the gap
+  # between the two to one single bubble instead of two.
+  hook_after_ladder: >-
+    The chat is about to end. You already left them on an open thread a moment ago — in ONE short bubble of
+    4-7 words, make that SAME thread sharper with one more small detail, in your own words. Never open a new
+    thread, never repeat its exact wording, never ask a question, never mention time running out.
   # added when the user has gone quiet (timing.idle_nudge_seconds)
   quiet: >-
     They have gone quiet. Carry on by yourself, like an astrologer still reading their chart: one short, specific
     observation about their topic.
-  # added to "engage": whether this reply may ask a question (never two replies in a row, at most style.question_budget)
-  ask_yes: >-
-    You may end with ONE short, personal question they'd enjoy answering.
-  ask_no: >-
-    No question this time: end on a statement.
 
 # Lines the ENGINE sends word-for-word (no AI). Edit freely; {variables} are filled in.
 # Available: {name} {moon_sign} {mahadasha} {antardasha} {last_topic_label} {persona_name} {monthly_line}
 scripted:
-  # After "Astro Omkar has joined": a short greeting. The kundli is NOT shown yet.
+  # After "Astro Omkar has joined": a short greeting. The kundli is NOT shown yet. opening[1] is used when the
+  # topic isn't known; returning_greeting replaces it for a returning user whose topic is already known.
   opening:
     - "Namaste {name} ji 🙏"
     - "Aapka swagat hai."
-  topic_hook:                        # 3rd greeting bubble: the question, by last_topic
+  returning_greeting: "Kaise hai aap?"
+  # Asked after timing.topic_wait_seconds, only if they haven't said anything by then: their own topic question
+  # if it's known (topic_hook below), else the generic topic_prompt. Not bundled into the opening any more.
+  topic_prompt: "Kis baare mein jaanna chahte hain aap?"
+  topic_hook:                        # the predefined question for a returning user whose topic is known
     shaadi: "Shaadi ke baare mein jaanna hai?"
     naukri: "Naukri ke baare mein jaanna hai?"
     paisa: "Paise ke baare mein jaanna hai?"
     parivaar: "Parivaar ke baare mein jaanna hai?"
     pyaar: "Pyaar ke baare mein jaanna hai?"
     default: "Shaadi, naukri, paisa ya pyaar — kis baare mein jaanna hai?"
-  # First answer = chart_intro → kundli card → chart_line → 1 answer. chart_intro "" = skip it.
+  # Stage "gather"'s own fallback once a topic is known (see gatherFollowupLine in engine.ts): a real clarifying
+  # follow-up, not topic_hook's yes/no confirmation — so a model failure here still reads like Omkar listened.
+  topic_followup:
+    shaadi: "Shaadi ko lekar abhi kya dikkat aa rahi hai?"
+    naukri: "Naukri mein abhi kya dikkat aa rahi hai?"
+    paisa: "Paise ko lekar abhi kya pareshani hai?"
+    parivaar: "Ghar mein abhi kya chal raha hai jiski fikar hai?"
+    pyaar: "Ismein abhi kya chal raha hai jo aap jaanna chahte hain?"
+  # First answer = empathy bubble → chart_intro → kundli card → chart_line → the finding + the hook. chart_intro "" = skip it.
+  # No rashi name here: Vedic rashi (Moon-based, sidereal) routinely differs from the Western sun sign someone
+  # already knows, and naming it invites a "that's wrong" objection for no reason — the kundli card already
+  # shows it as a fact label, so nothing is lost. Dasha stays: nobody has a prior belief about their own
+  # dasha to contradict, so it's a free, uncontested "Omkar knows something real about me" moment.
   chart_intro: "Aapki kundli dekh raha hoon…"
-  chart_line: "Rashi {moon_sign}, dasha {mahadasha} ki."
-  chart_line_rashi_only: "Rashi {moon_sign} hai aapki."   # no birth time and the dasha is uncertain (no birth time + rashi uncertain → no chart line, no kundli card)
+  # Framed as an observation ("jaisa ki main dekh pa raha hoon"), not a flat fact statement — and kept separate
+  # from the finding bubble that follows it (reply_instructions.answer), so the two never repeat the same idea.
+  chart_line: "Jaisa ki main dekh pa raha hoon, abhi aapki kundli mein {mahadasha} ka samay chal raha hai."
+  # No birth time → dasha uncertain: used instead of chart_line above, same place, same pacing — never names a
+  # planet or dasha we're not sure is right. Positive and tied to THEIR topic instead (never a generic "something
+  # good"), keyed the same way as topic_hook/topic_followup; "default" covers an unknown topic.
+  chart_line_unsure:
+    shaadi: "Jaisa ki main dekh pa raha hoon, aapki kundli mein shaadi ka yog shubh hai."
+    naukri: "Jaisa ki main dekh pa raha hoon, aapki kundli mein career ka yog bright hai."
+    paisa: "Jaisa ki main dekh pa raha hoon, aapki kundli mein paise ka yog majboot hai."
+    parivaar: "Jaisa ki main dekh pa raha hoon, aapki kundli mein parivaar ka yog sukhad hai."
+    pyaar: "Jaisa ki main dekh pa raha hoon, aapki kundli mein pyaar ka yog gehra hai."
+    default: "Jaisa ki main dekh pa raha hoon, aapki kundli mein abhi ka samay accha hai."
   # Sent at closing_at_seconds_left: the last open thread, just before the hand-off card.
   closing:
     - "{name} ji, ek aur zaroori baat dikh rahi hai…"
-  fallback_reply: "Yeh dhyaan se dekhne wali baat hai."
+  # When the model call fails or gets fully guard-rejected (any stage except "gather" — that one has its own
+  # fallback, see topicPromptLine in engine.ts). Deliberately a doubt-hook line, not a flat dead-end statement —
+  # a model failure shouldn't feel like the conversation stopped, it should feel like Omkar is still reading.
+  fallback_reply: "Par is samay kuch baaton ka aapko khaas dhyaan rakhna hoga."
+  # Used instead of the line above if it was already said earlier in this chat (two separate stages failing back
+  # to back) — so a second failure never repeats the exact same line either.
+  fallback_reply_alt: "Isme thoda aur samay lagega, samajhne mein."
   health_reply: "Sehat ke liye doctor se zaroor milein."
   crisis_reply:                      # sent when a user shows distress; the sales card is NOT shown
     - "{name} ji, aap akele nahi hain."
@@ -155,7 +294,7 @@ topics:
   shaadi: [shaadi, shadi, marriage, vivah, rishta, wife, husband, biwi, pati, patni]
   naukri: [naukri, job, career, kaam, business, vyapar, promotion, interview]
   paisa: [paisa, paise, money, dhan, loan, karz, income]
-  parivaar: [parivaar, family, ghar, maa, papa, bachche, baccha]
+  parivaar: [parivaar, family, ghar, maa, papa, bachche, baccha, bacche, bachcha, bacha, santaan]
   pyaar: [pyaar, pyar, love, girlfriend, boyfriend, breakup, crush]
   sehat: [health, sehat, bimari, beemari, hospital, operation, dawai]
 
@@ -186,16 +325,19 @@ guardrails:
     - '\b(ai ho|bot ho|real ho|insaan ho)\b'
 
 # Where the CTA sends the user.
-# v1: the app's home page for everyone. Later: booking-initiation deep links (with balance → straight into a chat;
-# no balance → recharge first), picked per user by wallet_balance.
+# v1: an AppsFlyer OneLink (deferred deep link) for everyone. Later: booking-initiation deep links (with balance
+# → straight into a chat; no balance → recharge first), picked per user by wallet_balance — still via OneLink, so
+# the destination survives an install in between, not just an already-installed app.
 handoff:
-  deeplink_with_balance: "astrolokal://Home"   # v1: the app's home page (same as below)
-  deeplink_no_balance: "astrolokal://Home"     # v1: the app's home page (same as above)
-  # If the app doesn't open within 1.5 s (not installed), the button goes here instead:
+  deeplink_with_balance: "https://astrolokal.onelink.me/IE0Y/wpa10g7p"   # v1: same OneLink for everyone (same as below)
+  deeplink_no_balance: "https://astrolokal.onelink.me/IE0Y/wpa10g7p"     # v1: same OneLink for everyone (same as above)
+  # Not used any more now that the deeplinks above are https (OneLink handles its own store-redirect when the app
+  # isn't installed) — openApp()'s 1.5s-timeout fallback only applies to a non-https (custom scheme) deeplink.
+  # Kept only as a safety net for handoffUrl()/validateConfig if a deeplink is ever reverted to a custom scheme.
   fallback_url: "https://play.google.com/store/apps/details?id=com.astrolokal.astrology"
   # Attribution on every tap: {token} {prompt_version} {cohort} {arm} {balance} (token is opaque, never a phone number)
   utm: "utm_source=wati&utm_campaign=ai_free_chat&utm_content={prompt_version}&utm_term={token}&cohort={cohort}&arm={arm}&bal={balance}"
-  utm_on_app_links: false   # true only if the app accepts astrolokal://Home?utm_… (ask tech); https links always carry it
+  utm_on_app_links: false   # irrelevant now the deeplinks are https — https links always carry the UTM regardless
 
 # What the chat uses. Switch off per cohort to test what actually moves the tap rate.
 assets:
@@ -218,6 +360,314 @@ cohorts:
   rc1_control: {}
   rc2_control: {}
   rc3_control: {}
+  # Phase 5: someone whose user_id Redash never sent us — they self-entered their own details instead.
+  # Kept separate so /admin never mixes them into the real pilot's funnel numbers.
+  self_serve: {}
+
+# A second axis, independent of cohorts: which language the chat is shown in (scripted lines, UI copy, guardrails).
+# "hinglish" is today's whole experience, unchanged. Tamil/Telugu/Malayalam content lands in a later change —
+# this just reserves the mechanism, so nothing behaves differently yet. A language's guardrail patterns ADD to the
+# base ones below, they never replace them, so switching language can never drop a safety check.
+default_language: hinglish
+languages:
+  hinglish: {}
+  # DRAFT — Tamil/Telugu/Malayalam below are a first pass, not yet reviewed by a native speaker.
+  # Before any real user sees these: a native speaker must check scripted/ui copy for correctness and tone,
+  # and separately sign off guardrails.crisis and guardrails.banned, since those are the safety-critical part.
+  # Default script is Romanized (same convention as Hinglish); Omkar still adapts to native script if the user
+  # types in it mid-chat (see prompt_template.md). Astrology terms (rashi/dasha/mahadasha names) are left as-is —
+  # they're pan-Indian Sanskrit-derived terms already used this way in Tamil/Telugu/Malayalam astrology too.
+  ta:
+    persona:
+      disclosure_line: "Naan Astrolokal oda Astro Sahayak."
+    scripted:
+      opening:
+        - "Vanakkam {name} 🙏"
+        - "Ingu varaverkirom."
+      returning_greeting: "Eppadi irukeenga?"
+      topic_prompt: "Edha patthi therinjikanum neenga?"
+      topic_hook:
+        shaadi: "Kalyanam patthi therinjikanuma?"
+        naukri: "Velai patthi therinjikanuma?"
+        paisa: "Panam patthi therinjikanuma?"
+        parivaar: "Kudumbam patthi therinjikanuma?"
+        pyaar: "Kadhal patthi therinjikanuma?"
+        default: "Kalyanam, velai, panam illa kadhal - edha patthi therinjikanuma?"
+      chart_intro: "Unga kundli-a paakaren…"
+      chart_line: "{mahadasha} dasha nadakkudhu."
+      chart_line_unsure:
+        shaadi: "Ippo unga kundli-la kalyana yogam shubama irukku."
+        naukri: "Ippo unga kundli-la velai yogam bright-a irukku."
+        paisa: "Ippo unga kundli-la panam yogam balamana irukku."
+        parivaar: "Ippo unga kundli-la kudumba yogam inimaiyana irukku."
+        pyaar: "Ippo unga kundli-la kadhal yogam azhamana irukku."
+        default: "Ippo unga kundli-la neram nalla irukku."
+      closing:
+        - "{name}, innum oru mukkiyamana vishayam irukku…"
+      fallback_reply: "Ippo konjam vishayangala neenga kavanamaa paakanum."
+      health_reply: "Udal nalam pathi doctor-a kelunga."
+      crisis_reply:
+        - "{name}, neenga thaniya illa."
+        - "Ungal kashtatha kekka aalunga irukkanaga."
+        - "Ippo Tele-MANAS 14416 ku call pannunga. Free, 24 mani neram."
+    ui:
+      joining: "{persona_name} kooda connect pandrom…"
+      joined: "{persona_name} join aayachu"
+      details_message: "En details:\n{name} · {gender_label} · {dob_label}\n{tob_label} · {pob}"
+      tob_unknown: "Pirantha neram theriyadhu"
+      kundli_caption: "{name} oda Kundli"
+      kundli_lagna_chart: "Lagna chart"
+      kundli_moon_chart: "Moon chart"
+      moon_sign_label: "Raasi"
+      dasha_label: "Dasha"
+      day_chip: "Indru"
+      strip_during: "🎁 Idhu mudicha oru surprise gift kidaikum"
+      strip_reveal: "🎉 Oru special offer unlock aagiduchu!"
+      time_up: "Neram mudinjidhu"
+      time_up_status: "Chat mudinjidhu"
+      status_online: "Online"
+      status_typing: "type pannitu irukkanga…"
+      strip_cta: "Vaangunga"
+      card_text: "{name}, unga kundli la mukkiyamana vishayam innum sollala 👀"
+      card_offer: "Oru special offer ungalukkaga 👀"
+      cta_label: "Astrologer kooda pesunga"
+      cta_subtext: "Engal top astrologers kooda pesunga"
+      input_placeholder: "Unga kelvi type pannunga…"
+      send_error: "Message anupa mudiyala. Thayavu seydhu try pannunga."
+      ended_title: "Unga free reading mudinjidhu"
+      invalid_title: "Indha link work aagala"
+      invalid_text: "Astrolokal app la direct ah astrologer kooda pesalam"
+    card_text_by_topic:
+      shaadi: "{name}, unga kalyanathoda sariyana neram innum sollala 👀"
+      naukri: "{name}, unga velaikku sariyana samayam innum varala👀"
+      paisa: "{name}, panam eppo epdi varum nu innum sollala 👀"
+      pyaar: "{name}, unga kadhalukku real answer innum kedikela👀"
+      parivaar: "{name}, kudumba prachanaikku theervu innum kaanala👀"
+    guardrails:
+      banned:
+        - { reason: relative_time, pattern: '\b(adutha|rendu moonu) (varusham|matham|vaaram)\b' }
+        - { reason: remedy, pattern: '\b(mandhiram|pariharam|homam|vratham|dhaanam|rathina kal)\b' }
+        - { reason: fear, pattern: '\b(soonium|karuppu sakthi|vibaththu|ketta samayam)\b' }
+        - { reason: guarantee, pattern: '\b(kachitham|urudhiyaa)\b' }
+        - { reason: handoff_talk, pattern: '\b(vera astrologer kitta|piragu sollaren)\b' }
+        - { reason: human_claim, pattern: '\b(naan manithan|naan real)\b' }
+      crisis:
+        - '\btharkolai\b'
+        - '(saga\w*|ninai\w*|uyir vida (ninai\w*|virumbu\w*)|vaazha (vendaam|pidikala))'
+      injection:
+        - '(ellame marandhudu|unga instructions)'
+      ai_question:
+        - '\b(neenga|nee)\s+(ai|bot|robot|real|manithara)\b'
+        - '\b(ai|bot)\s*aa\b'
+  te:
+    persona:
+      disclosure_line: "Nenu Astrolokal lo oka Astro Sahayakudni."
+    scripted:
+      opening:
+        - "Namaskaram {name} garu 🙏"
+        - "Meeku swagatham."
+      returning_greeting: "Ela unnaru?"
+      topic_prompt: "Deni gurinchi telusukovalani undi meeku?"
+      topic_hook:
+        shaadi: "Pelli gurinchi telusukovalani undaa?"
+        naukri: "Udyogam gurinchi telusukovalani undaa?"
+        paisa: "Dabbu gurinchi telusukovalani undaa?"
+        parivaar: "Mi Kutumbam gurinchi telusukovalani unda?"
+        pyaar: "Prema gurinchi telusukovalani undaa?"
+        default: "Pelli, udyogam, dabbu, leda prema - deni gurinchi telusukovalani undi?"
+      chart_intro: "Mee kundli chusthunnanu…"
+      chart_line: "{mahadasha} dasha nadustondi."
+      chart_line_unsure:
+        shaadi: "Ippudu mee kundlilo pelli yogam shubhamga undi."
+        naukri: "Ippudu mee kundlilo career yogam bright-ga undi."
+        paisa: "Ippudu mee kundlilo dabbu yogam balanga undi."
+        parivaar: "Ippudu mee kundlilo kutumba yogam anandanga undi."
+        pyaar: "Ippudu mee kundlilo prema yogam gaadhamga undi."
+        default: "Ippudu mee kundlilo samayam manchiga undi."
+      closing:
+        - "{name} garu, inkoka mukhyamaina vishayam kanipistundi…"
+      fallback_reply: "Kaani ippudu konni vishayalu meeru jagratthaga gamaninchali."
+      health_reply: "Aarogyam kosam doctor ni consult avvandi."
+      crisis_reply:
+        - "{name} garu, meeru okkaru kaadu."
+        - "Mee badha vinae vallu unnaru."
+        - "Ippudu Tele-MANAS 14416 ki call cheyandi. Free, 24 gantalu."
+    ui:
+      joining: "{persona_name} tho connect chestunnam…"
+      joined: "{persona_name} join ayyaru"
+      details_message: "Naa vivaralu:\n{name} · {gender_label} · {dob_label}\n{tob_label} · {pob}"
+      tob_unknown: "Puttina samayam teliyadu"
+      kundli_caption: "{name} Kundli"
+      kundli_lagna_chart: "Lagna chart"
+      kundli_moon_chart: "Moon chart"
+      moon_sign_label: "Rashi"
+      dasha_label: "Dasha"
+      day_chip: "Ivala"
+      strip_during: "🎁 Ee chat ni complete cheste oka surprise gift"
+      strip_reveal: "🎉 Oka special offer meeku unlock ayyindi!"
+      time_up: "Samayam ayipoindi"
+      time_up_status: "Chat ayipoindi"
+      status_online: "Online"
+      status_typing: "type chestunnaru…"
+      strip_cta: "Teesukondi"
+      card_text: "{name} garu, mee kundli lo chala mukhyamaina vishayam inka cheppaledu 👀"
+      card_offer: "Meeku oka special offer 👀"
+      cta_label: "Astrologer tho matladandi"
+      cta_subtext: "Maa top astrologers tho matladandi"
+      input_placeholder: "Mee prashna type cheyandi…"
+      send_error: "Message pampaledu. Dayachesi malli try cheyandi."
+      ended_title: "Mee free reading ayipoindi"
+      invalid_title: "Ee link pani cheyadam ledu"
+      invalid_text: "Astrolokal app lo neruga astrologer tho matladochu"
+    card_text_by_topic:
+      shaadi: "{name} garu, mee pelli ki sariyaina samayam inka cheppaledu 👀"
+      naukri: "{name} garu, mee udyogam ki sariyaina samayam inka cheppaledu 👀"
+      paisa: "{name} garu, dabbu eppudu ela vastundi ani inka cheppaledu 👀"
+      pyaar: "{name} garu, mee prema ki nijamaina samadhanam inka cheppaledu 👀"
+      parivaar: "{name} garu, kutumba samasyalaku parishkaram inka cheppaledu 👀"
+    guardrails:
+      banned:
+        - { reason: relative_time, pattern: '\b(vachche samvatsaram|rendu moodu nelallo|ee samvatsaram)\b' }
+        - { reason: remedy, pattern: '\b(mantram|parihaaram|homam|vratham|dhaanam|ratna)\b' }
+        - { reason: fear, pattern: '\b(chetabadi|pramadam|chedu samayam)\b' }
+        - { reason: guarantee, pattern: '\b(khachithanga|tappakunda)\b' }
+        - { reason: handoff_talk, pattern: '\b(vere jyothishkudu|tarvatha cheptanu)\b' }
+        - { reason: human_claim, pattern: '\b(nenu manishini|nenu real)\b' }
+      crisis:
+        - '\baatmahatya\b'
+        - '(chanipovali\s*anipi\w*|brathakalani\s*(ledu|anipi\w*)|prana(alu)?\s*vadalaali)'
+      injection:
+        - '(anni marchipo|mee instructions)'
+      ai_question:
+        - '\b(meeru|nuvvu)\s+(ai|bot|robot|real|manishiva)\b'
+        - '\b(ai|bot)\s*anaa\b'
+  ml:
+    persona:
+      disclosure_line: "Njan Astrolokal-inte Astro Sahayi aanu."
+    scripted:
+      opening:
+        - "Namaskaram {name} 🙏"
+        - "Swagatham."
+      returning_greeting: "Engane undu ningal?"
+      topic_prompt: "Endhu kurichanu ariyanam ningalkku?"
+      topic_hook:
+        shaadi: "Kalyanathe kurichu ariyanamo?"
+        naukri: "Joliye kurichu ariyanamo?"
+        paisa: "Panathe kurichu ariyanamo?"
+        parivaar: "Kudumbathe kurichu ariyanamo?"
+        pyaar: "Premathe kurichu ariyanamo?"
+        default: "Kalyanam, joli, panam, atha premam - endhu kurichanu ariyanam?"
+      chart_intro: "Ningalude kundli nokkunnu…"
+      chart_line: "{mahadasha} dasha aanu."
+      chart_line_unsure:
+        shaadi: "Ippol ningalude kundliyil kalyana yogam shubhamanu."
+        naukri: "Ippol ningalude kundliyil joli yogam bright aanu."
+        paisa: "Ippol ningalude kundliyil panam yogam saktamanu."
+        parivaar: "Ippol ningalude kundliyil kudumba yogam santhoshamanu."
+        pyaar: "Ippol ningalude kundliyil premam yogam aazhamanu."
+        default: "Ippol ningalude kundliyil samayam nallathanu."
+      closing:
+        - "{name}, veroru pradhana karyam kaanunnu…"
+      fallback_reply: "Pakshe ippol kure karyangal ningal shraddhayode nokkanam."
+      health_reply: "Arogyathinu doctor-ne kaanenam."
+      crisis_reply:
+        - "{name}, ningal thaniye alla."
+        - "Ningalude vishamam kelkkan aalukal undu."
+        - "Ippo Tele-MANAS 14416 vilikku. Free, 24 maniknnuram."
+    ui:
+      joining: "{persona_name}-umayi connect cheyyunnu…"
+      joined: "{persona_name} join cheythu"
+      details_message: "Ente details:\n{name} · {gender_label} · {dob_label}\n{tob_label} · {pob}"
+      tob_unknown: "Janana samayam ariyilla"
+      kundli_caption: "{name}-nte Kundli"
+      kundli_lagna_chart: "Lagna chart"
+      kundli_moon_chart: "Moon chart"
+      moon_sign_label: "Rashi"
+      dasha_label: "Dasha"
+      day_chip: "Innu"
+      strip_during: "🎁 Ee chat theernnal oru surprise gift"
+      strip_reveal: "🎉 Oru special offer unlock aayi!"
+      time_up: "Samayam theernnu"
+      time_up_status: "Chat theernnu"
+      status_online: "Online"
+      status_typing: "type cheyyunnu…"
+      strip_cta: "Vaangu"
+      card_text: "{name}, ningalude kundli-ile ettavum pradhanappetta karyam innum paranjittilla 👀"
+      card_offer: "Oru special offer ningalkku 👀"
+      cta_label: "Astrologer-umayi samsarikku"
+      cta_subtext: "Njangalude top astrologers-umayi samsarikku"
+      input_placeholder: "Ningalude chodyam type cheyyoo…"
+      send_error: "Message ayakkan pattiyilla. Dayavayi veendum vilikku."
+      ended_title: "Ningalude free reading theernnu"
+      invalid_title: "Ee link pravarthikkunnilla"
+      invalid_text: "Astrolokal app-il neridittu astrologer-umayi samsarikkam"
+    card_text_by_topic:
+      shaadi: "{name}, ningalude kalyanathinte sariyaya samayam innum paranjittilla 👀"
+      naukri: "{name}, ningalude joliku sariyaya samayam innum paranjittilla 👀"
+      paisa: "{name}, panam eppo engane varumennu innum paranjittilla 👀"
+      pyaar: "{name}, ningalude premathinte innayu kurachu parayandu"
+      parivaar: "{name}, kudumba prashnathinu parihaaram innum paranjittilla 👀"
+    guardrails:
+      banned:
+        - { reason: relative_time, pattern: '\b(aduttha varsham|randu moonu masam|ee masam)\b' }
+        - { reason: remedy, pattern: '\b(manthram|parihaaram|homam|vratham|dhaanam|rathnam)\b' }
+        - { reason: fear, pattern: '\b(koodothram|kashta kaalam|aapathu)\b' }
+        - { reason: guarantee, pattern: '\b(urappayittum|theerchayayum)\b' }
+        - { reason: handoff_talk, pattern: '\b(veroru jyolsyan|pinne parayam)\b' }
+        - { reason: human_claim, pattern: '\b(njan manushyan aanu|njan real)\b' }
+      crisis:
+        - '\bathmahatya\b'
+        - '(jeevikkan\s*thonnunilla|marikkan\s*thonnunnu)'
+      injection:
+        - '(ellam marannu kollu|ningalude instructions)'
+      ai_question:
+        - '\b(ningal|nee)\s+(ai|bot|robot|real|manushyananno)\b'
+        - '\b(ai|bot)\s*aano\b'
+
+# Native-script display labels for the "pick your language" screen (Phase 4) — shown before anyone has chosen a
+# language, so these must be readable without relying on any other language. Not used anywhere else (the chat
+# itself defaults to Romanized script per languages.<key>, same as Hinglish).
+# Brand shown on the picker screen itself — this is before anyone has met Omkar, so it's AstroLokal, not the
+# persona. "" for the logo shows an initial "A" (same fallback rule as persona.avatar_url); swap in the real
+# logo file (drop it in public/, e.g. "/logo/astrolokal.png") or an https:// link whenever it's ready.
+language_picker_brand_name: "AstroLokal"
+language_picker_logo: "/logo/astrolokal.png"
+language_picker_prompt: "Select your preferred language to continue"
+language_picker_labels:
+  hinglish: "Hindi"
+  ta: "Tamil"
+  te: "Telugu"
+  ml: "Malayalam"
+
+# DRAFT, same caveat as languages above — self-serve onboarding form copy, by the language picked before the
+# form shows. Hinglish needs no entry (the form's own English text is that default). The form only asks for
+# name and date of birth (no gender, time or place of birth — see chart.ts); Day/Month/Year and month names
+# stay in English in every language, a deliberate choice (same as kundli_lagna_chart above).
+onboarding_labels:
+  ta:
+    title: "Unga details fill pannunga, adhu vechu unga kundli build pannaren."
+    name_label: "Peru"
+    dob_label: "Piranthaa naal"
+    submit_label: "En free chat-a start pannunga"
+    submit_busy: "Konjam irunga…"
+    error_missing: "Unga pirantha naal fill pannunga."
+    error_failed: "Edho problem. Thayavu seydhu details-a check pannitu try pannunga."
+  te:
+    title: "Mee details fill cheyyandi, dani tho nenu mee kundli build chestanu."
+    name_label: "Peru"
+    dob_label: "Puttina roju"
+    submit_label: "Naa free chat start cheyyi"
+    submit_busy: "Konchem sepu agandi…"
+    error_missing: "Dayachesi mee puttina roju fill cheyyandi."
+    error_failed: "Edo saripoledu. Dayachesi details check chesi malli try cheyyandi."
+  ml:
+    title: "Ningalude details fill cheyyu, athu vechu njan ningalude kundli undakkam."
+    name_label: "Peru"
+    dob_label: "Janana thiyathi"
+    submit_label: "Ente free chat thudangu"
+    submit_busy: "Kurach kaathirikku…"
+    error_missing: "Dayavayi janana thiyathi fill cheyyu."
+    error_failed: "Enthoru pishaku. Dayavayi details check cheythu veendum try cheyyu."
 
 # Where today's users come from: the daily retargeting query in Redash (run by `npm run sync`, a daily Devtron cron).
 # Map each field to the query's column name. The kundli is computed from dob + tob + pob.

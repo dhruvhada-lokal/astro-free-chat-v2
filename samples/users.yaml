@@ -6,6 +6,7 @@
   tob: "03:10"
   pob: Guntur, Andhra Pradesh
   language: Hinglish
+  chat_language: hinglish
   moon_sign: Tula
   mahadasha: Shani
   antardasha: Ketu
@@ -23,6 +24,7 @@
   tob: null
   pob: Kanpur, Uttar Pradesh
   language: Hindi
+  chat_language: hinglish
   moon_sign: Makar
   mahadasha: Guru
   antardasha: Rahu
@@ -36,6 +38,7 @@
   tob: "06:10"
   pob: Patna, Bihar
   language: Hinglish
+  chat_language: hinglish
   moon_sign: Mesh
   mahadasha: Mangal
   antardasha: Budh
@@ -43,3 +46,18 @@
   last_topic: naukri
   last_consult_date: "2026-09-01"
   consult_count: 1
+- token: t_demo_picklang_04
+  name: Priya Nair
+  gender: female
+  dob: "1998-06-15"
+  tob: "14:20"
+  pob: Kochi, Kerala
+  language: Hinglish
+  moon_sign: Kark
+  mahadasha: Budh
+  antardasha: Shukra
+  lagna: Tula
+  last_topic: pyaar
+  last_consult_date: "2026-09-10"
+  consult_count: 2
+  planets: { Su: "Mithun 24.1", Mo: "Kark 8.6", Ma: "Mesh 2.4", Me: "Mithun 29.0", Ju: "Meen 15.2", Ve: "Vrishabh 9.8", Sa: "Kumbh 22.1", Ra: "Mesh 11.0", Ke: "Tula 11.0" }

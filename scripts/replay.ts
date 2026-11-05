@@ -28,7 +28,7 @@ for (const text of process.argv.slice(2)) {
   console.log(quiet ? `   (quiet · ${left}s left)` : `U: ${text}   (${left}s left)`);
   const withChart = first && ["llm", "quiet"].includes(log.route);
   if (withChart) st.chartShown = true;
-  for (const b of withChart ? [chartIntro(L.cfg, ctx), "[kundli]", chartLine(L.cfg, ctx), ...bubbles] : bubbles) console.log(`   A: ${b}`);
+  for (const b of withChart ? [chartIntro(L.cfg, ctx), "[kundli]", chartLine(L.cfg, ctx, st.currentTopic), ...bubbles] : bubbles) console.log(`   A: ${b}`);
   if (log.flags.length) console.log(`   flags: ${log.flags.join(", ")}`);
   if (!quiet) history.push({ role: "user", text });
   history.push(...bubbles.map((b) => ({ role: "ai" as const, text: b })));

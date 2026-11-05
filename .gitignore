@@ -47,3 +47,6 @@ next-env.d.ts
 
 # temporary folders from the migration drift test
 /.drizzle-check-*
+
+# local dev server log
+.dev.log

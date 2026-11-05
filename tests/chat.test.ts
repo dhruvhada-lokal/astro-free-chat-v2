@@ -29,11 +29,13 @@ test("unknown or malformed link → invalid screen", async () => {
   assert.equal((await chat.startOrResume("../../etc")).status, "invalid");
 });
 
-test("first open: details → Omkar joins → 3-line greeting; no kundli yet; reopening resumes", async () => {
+test("first open: details → Omkar joins → 2-line greeting (known topic: \"kaise hai aap\"); no kundli, no topic question yet; reopening resumes", async () => {
   const v = await chat.startOrResume("u_open_001");
   assert.equal(v.status, "active");
-  assert.deepEqual(v.messages.map((m) => m.role), ["details", "system", "system", "ai", "ai", "ai"]);
+  assert.deepEqual(v.messages.map((m) => m.role), ["details", "system", "system", "ai", "ai"]);
   assert.match(v.messages[2].text, /has joined/);
+  assert.equal(v.messages[4].text, "Kaise hai aap?", "last_topic (shaadi) is known: the returning greeting, not \"Aapka swagat hai\"");
+  assert.equal(v.topicAsked, false, "the topic question itself is asked later (timing.topic_wait_seconds), not bundled in here");
   assert.ok(v.secondsLeft > 115 && v.secondsLeft <= 120);
   assert.equal(v.chart?.moonSign, samples[0].moon_sign);
   assert.equal(v.persona.name, "Astro Omkar");
@@ -45,17 +47,21 @@ test("first open: details → Omkar joins → 3-line greeting; no kundli yet; re
   assert.match(v.ui.card_text, /Rohan ji, aapki shaadi ki sahi timing abhi batani baaki hai/, "the card names their topic (last chat: shaadi)");
   const again = await chat.startOrResume("u_open_001");
   assert.equal(again.messages.length, v.messages.length);
-  assert.equal((await getStore().getSession("u_open_001"))?.messages.length, 6);
+  assert.equal((await getStore().getSession("u_open_001"))?.messages.length, 5);
 });
 
-test("first answer = intro + kundli + chart line + 1 reply; later answers = 3 replies; all stored and logged", async () => {
+test("first answer = intro + kundli + chart line + reply bubble(s); later answers = 3 replies; all stored and logged", async () => {
   await chat.startOrResume("u_send_001");
   const r = await chat.sendMessage("u_send_001", "  shaadi   kab hogi?  ");
   assert.equal(r.ok, true);
   assert.ok(r.ok);
-  assert.deepEqual(r.messages.map((m) => m.role), ["ai", "kundli", "ai", "ai"]);
-  assert.equal(r.messages[0].text, "Aapki kundli dekh raha hoon…");
-  assert.match(r.messages[2].text, /^Rashi .*, dasha .* ki\.$/);
+  // The reply bubble count here depends on which MOCK_LINES entry the rotation happens to pick (1 or 2 bubbles) —
+  // the structural guarantee under test is empathy → intro → kundli → chart line → the rest of the finding, not
+  // an exact count (a 1-bubble mock pick is entirely consumed as the empathy opener, with nothing left after).
+  assert.deepEqual(r.messages.slice(0, 4).map((m) => m.role), ["ai", "ai", "kundli", "ai"], "empathy, intro, kundli card, chart line");
+  assert.ok(r.messages.length >= 4 && r.messages.slice(4).every((m) => m.role === "ai"), "then the rest of the finding, if any");
+  assert.equal(r.messages[1].text, "Aapki kundli dekh raha hoon…");
+  assert.match(r.messages[3].text, /ka samay chal raha hai\.$/);
   const second = await chat.sendMessage("u_send_001", "love ya arrange?");
   assert.ok(second.ok);
   assert.ok(second.messages.every((m) => m.role === "ai"), "no second kundli");
@@ -69,18 +75,28 @@ test("first answer = intro + kundli + chart line + 1 reply; later answers = 3 re
   assert.equal(empty.ok, false);
 });
 
-test("the kundli card always comes with the first answer, whatever the user picks from the opening question", async () => {
+test("the kundli card comes with the first answer once a topic is named; a bare greeting asks again instead", async () => {
   const cfg = parse(readFileSync("config/config.yaml", "utf8"));
   const opening: string = cfg.scripted.topic_hook.default;
   const sehat: string[] = cfg.guardrails.topics?.sehat ?? cfg.topics?.sehat ?? [];
   for (const w of sehat) assert.ok(!new RegExp(`\\b${w}\\b`, "i").test(opening), `the opening must not offer "${w}": a health question gets the doctor line and no kundli`);
-  const replies = ["shaadi", "naukri", "paisa", "pyaar", "hi", "hello", "shaadi kab hogi?"];
-  await getStore().upsertUsers(replies.map((_, i) => user(`u_kundli_${i}`)));
-  for (const [i, text] of replies.entries()) {
+  const named = ["shaadi", "naukri", "paisa", "pyaar", "shaadi kab hogi?"];
+  await getStore().upsertUsers(named.map((_, i) => user(`u_kundli_${i}`)));
+  for (const [i, text] of named.entries()) {
     await chat.startOrResume(`u_kundli_${i}`);
     const r = await chat.sendMessage(`u_kundli_${i}`, text);
     assert.ok(r.ok);
-    assert.deepEqual(r.messages.slice(0, 3).map((m) => m.role), ["ai", "kundli", "ai"], `"${text}" → kundli dekh raha hoon, card, chart line`);
+    assert.deepEqual(r.messages.slice(0, 4).map((m) => m.role), ["ai", "ai", "kundli", "ai"], `"${text}" → empathy, kundli dekh raha hoon, card, chart line`);
+  }
+  // No topic at all (a bare greeting, "how are you") is deterministic, not left to the model: ask the topic
+  // question again instead of ever revealing the chart with nothing to go on.
+  const bare = ["hi", "hello"];
+  await getStore().upsertUsers(bare.map((_, i) => user(`u_bare_${i}`)));
+  for (const [i, text] of bare.entries()) {
+    await chat.startOrResume(`u_bare_${i}`);
+    const r = await chat.sendMessage(`u_bare_${i}`, text);
+    assert.ok(r.ok);
+    assert.deepEqual(r.messages.map((m) => m.role), ["ai"], `"${text}" → the topic question again, no kundli`);
   }
 });
 
@@ -103,7 +119,7 @@ test("the free time starts when the chat opens (clock_starts: open)", async () =
 });
 
 test("a message in the last seconds gets the closing line, then the chat ends", async () => {
-  process.env.DEV_FREE_SECONDS = "41"; // above pull_until (40); closing at 15 s left
+  process.env.DEV_FREE_SECONDS = "41"; // above pull_until (20); closing at 15 s left
   try {
     await getStore().upsertUsers([user("u_close_02")]);
     await chat.startOrResume("u_close_02");
@@ -222,7 +238,7 @@ test("quiet user: Omkar starts the reading himself, never faster than the idle t
   await quietFor("u_quiet_01", 26_000);
   const r = await chat.nudge("u_quiet_01");
   assert.ok(r.ok);
-  assert.deepEqual(r.messages.slice(0, 3).map((m) => m.role), ["ai", "kundli", "ai"], "no question yet → he starts with the kundli");
+  assert.deepEqual(r.messages.slice(0, 4).map((m) => m.role), ["ai", "ai", "kundli", "ai"], "no question yet → he starts with the kundli");
   assert.equal((await chat.nudge("u_quiet_01")).ok, false, "and not again straight away");
   const logs = await getStore().turnLogs("u_quiet_01");
   assert.equal(logs.at(-1)?.route, "quiet");
@@ -250,6 +266,44 @@ test("quiet at the end after an open thread: the chat just closes, no second hoo
   assert.ok(r.ok);
   assert.equal(r.messages.length, 0);
   assert.equal(r.view.closed, true);
+});
+
+test("no chat_language yet: the picker shows instead of the chat, nothing started", async () => {
+  await getStore().upsertUsers([{ ...user("u_lang_001"), chat_language: null }]);
+  const v = await chat.startOrResume("u_lang_001");
+  assert.equal(v.status, "choose_language");
+  assert.equal(v.clockStarted, false);
+  assert.deepEqual(v.messages, []);
+  assert.ok(v.languageOptions?.some((o) => o.key === "hinglish"));
+  assert.ok(v.languageOptions?.some((o) => o.key === "ta"));
+  assert.equal(await getStore().getSession("u_lang_001"), null, "no session is created just by showing the picker");
+});
+
+test("choosing a language saves it (once) and opens the chat in it", async () => {
+  await getStore().upsertUsers([{ ...user("u_lang_002"), chat_language: null }]);
+  const v = await chat.chooseLanguage("u_lang_002", "ta");
+  assert.equal(v.status, "active");
+  assert.equal((await getStore().getUser("u_lang_002"))?.chat_language, "ta");
+  assert.match(v.messages[3]?.text ?? "", /Vanakkam/, "the opening is now in Tamil");
+  // choosing again (e.g. a retried request) never overwrites an already-made choice
+  const again = await chat.chooseLanguage("u_lang_002", "te");
+  assert.equal((await getStore().getUser("u_lang_002"))?.chat_language, "ta");
+  assert.equal(again.status, "active");
+});
+
+test("an unrecognised language choice is ignored: picker shown again, nothing saved", async () => {
+  await getStore().upsertUsers([{ ...user("u_lang_003"), chat_language: null }]);
+  const v = await chat.chooseLanguage("u_lang_003", "klingon");
+  assert.equal(v.status, "choose_language");
+  assert.equal((await getStore().getUser("u_lang_003"))?.chat_language, null);
+});
+
+test("a chat that already started is never sent back through the picker, even with chat_language unset", async () => {
+  await getStore().upsertUsers([{ ...user("u_lang_004"), chat_language: "hinglish" }]);
+  await chat.startOrResume("u_lang_004"); // creates the session under hinglish
+  await getStore().upsertUsers([{ ...user("u_lang_004"), chat_language: null }]); // simulate legacy data missing it
+  const v = await chat.startOrResume("u_lang_004");
+  assert.equal(v.status, "active", "an existing session is resumed, never gated behind the picker");
 });
 
 test("the user_id never reaches the browser", async () => {

@@ -13,7 +13,7 @@
     "test": "node --test \"tests/*.test.ts\"",
     "import": "node --env-file-if-exists=.env.local scripts/import-users.ts",
     "verify": "npm run check && npm test && tsc --noEmit && npm run lint",
-    "dev:mock": "MOCK_LLM=1 DEV_FREE_SECONDS=40 next dev -p 3100",
+    "dev:mock": "MOCK_LLM=1 DEV_FREE_SECONDS=120 next dev -p 3100",
     "gemini-test": "node --env-file-if-exists=.env.local scripts/gemini-test.ts",
     "replay": "node --env-file-if-exists=.env.local scripts/replay.ts",
     "prodcheck": "node --env-file-if-exists=.env.local scripts/cli.ts prodcheck",

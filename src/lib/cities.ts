@@ -19,4 +19,15 @@ export const CITIES: [string, number, number][] = [
   ["Surat", 21.17, 72.83], ["Tenali", 16.24, 80.64], ["Thiruvananthapuram", 8.52, 76.94], ["Tiruchirappalli", 10.8, 78.69],
   ["Tirupati", 13.63, 79.42], ["Udaipur", 24.58, 73.71], ["Ujjain", 23.18, 75.78], ["Vadodara", 22.31, 73.18],
   ["Varanasi", 25.32, 82.97], ["Vijayawada", 16.51, 80.65], ["Visakhapatnam", 17.69, 83.22], ["Warangal", 17.97, 79.59],
+  // More Tamil Nadu, Telangana, Andhra Pradesh and Kerala cities (district headquarters / major towns).
+  ["Tirunelveli", 8.73, 77.7], ["Erode", 11.34, 77.73], ["Vellore", 12.92, 79.13], ["Thoothukudi (Tuticorin)", 8.8, 78.15],
+  ["Thanjavur", 10.79, 79.14], ["Dindigul", 10.37, 77.98], ["Kanchipuram", 12.84, 79.7], ["Nagercoil", 8.18, 77.43],
+  ["Karur", 10.96, 78.08], ["Cuddalore", 11.75, 79.77],
+  ["Nizamabad", 18.67, 78.1], ["Karimnagar", 18.44, 79.13], ["Khammam", 17.25, 80.15], ["Ramagundam", 18.75, 79.47],
+  ["Mahbubnagar", 16.74, 77.99], ["Adilabad", 19.67, 78.53],
+  ["Kurnool", 15.83, 78.04], ["Kadapa", 14.47, 78.82], ["Anantapur", 14.68, 77.6], ["Kakinada", 16.99, 82.25],
+  ["Eluru", 16.71, 81.1], ["Chittoor", 13.22, 79.1], ["Ongole", 15.51, 80.05], ["Srikakulam", 18.3, 83.9],
+  ["Vizianagaram", 18.12, 83.42], ["Machilipatnam", 16.19, 81.14],
+  ["Kollam", 8.89, 76.61], ["Thrissur", 10.53, 76.21], ["Kannur", 11.87, 75.37], ["Alappuzha", 9.49, 76.33],
+  ["Kottayam", 9.59, 76.52], ["Palakkad", 10.78, 76.65], ["Malappuram", 11.07, 76.07], ["Kasaragod", 12.5, 74.99],
 ];
