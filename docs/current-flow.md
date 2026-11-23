@@ -1,4 +1,4 @@
-# How Omkar works right now (free_chat_v4.2 + unreleased push-for-answer redesign)
+# How Sitara works right now (free_chat_v4.2 + unreleased push-for-answer redesign)
 
 This is the current, live behavior, end to end. For the history of how we got here, see
 `CHANGELOG.md`, `changes-before-prompt-rewrite.md`, and `changes-after-prompt-rewrite.md`.
@@ -10,13 +10,13 @@ The 120-second clock starts the moment the page opens.
 
 ## 2. If they stay silent
 
-At 7.5s, "typing…" shows. At 10s, Omkar asks the topic himself — their known topic question, or the
+At 7.5s, "typing…" shows. At 10s, Sitara asks the topic herself — their known topic question, or the
 generic one. Fires once only, and never if they've already said anything.
 
 ## 3. Stage "gather" — their first real message
 
-If it already names a topic AND their specific situation, Omkar skips straight to a real answer
-(see step 4). Otherwise he asks ONE short, topic-specific follow-up (e.g. "Naukri mein abhi kya
+If it already names a topic AND their specific situation, Sitara skips straight to a real answer
+(see step 4). Otherwise she asks ONE short, topic-specific follow-up (e.g. "Naukri mein abhi kya
 dikkat hai?"). **Only one such round is allowed** — the next reply is always forced into a real
 answer, whether or not the follow-up actually got a useful reply.
 - If the model fails here, the fallback is a real topic-specific follow-up (`topic_followup`), not
@@ -24,9 +24,9 @@ answer, whether or not the follow-up actually got a useful reply.
 
 ## 4. Stage "answer" — the real first finding
 
-Forced the first time Omkar gives a finding. The reveal:
+Forced the first time Sitara gives a finding. The reveal:
 ```
-Aapki kundli dekh raha hoon…          (scripted, ~1s typing)
+Aapki kundli dekh rahi hoon…          (scripted, ~1s typing)
 [kundli card]                          (5s silence + 2.5s typing = 7.5s total)
 Dasha Mangal chal rahi hai.            (scripted, plain — no positive spin added)
 [bubble 1: ONE chart detail, present-continuous tense, tied to what they said]
@@ -55,7 +55,7 @@ used to leave room for `engage` to ask twice). Tracked by `SessionState.engageQu
   "…", nothing more, no explanation of what the reason is).
 - **Case C — they push again after that** (`push_wait`, fires once the engine has seen the Case B
   line go out — `SessionState.pushHintGiven`): still don't resolve it, and never repeat the Case B
-  line. Two bubbles: first, "I'm still looking closely at that" in Omkar's own words; second, one
+  line. Two bubbles: first, "I'm still looking closely at that" in Sitara's own words; second, one
   positive-leaning line that stops dead **mid-word** on "agar" or "magar" — no ellipsis, no
   punctuation, genuinely unfinished. This is the one exception to "always a complete sentence."
 
@@ -74,7 +74,7 @@ short bubbles (4-7 words each).
 
 ## 8. Quiet
 
-If they go silent for 25s mid-chat, Omkar continues on his own, like he's still reading.
+If they go silent for 25s mid-chat, Sitara continues on her own, like she's still reading.
 
 ## 9. If the model call fails or times out
 

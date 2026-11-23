@@ -1,6 +1,8 @@
 // Daily sync: today's retargeted users (from the Redash query) → chat-ready users with their kundli.
 //
-// Every row needs a user_id and a date of birth; everything else is optional and simply left out if missing.
+// Every row needs a user_id; a date of birth is normally there too, but a row missing one is still synced (v3) —
+// with no chart yet, so the chat itself asks for it (see chat.ts's needs_dob status) instead of a dead end.
+// Everything else (name, tob, pob, …) is optional and simply left out if missing.
 // The kundli is computed here (Lahiri, Vimshottari) from the birth details:
 //   - birth time known + place found at city level (or lat/lon given) → full Lagna chart
 //   - otherwise → Moon chart (no lagna); and if without a birth time the rashi/dasha could differ that day, it isn't stated
@@ -18,8 +20,12 @@ export type SourceConfig = {
   columns: {
     user_id: string; dob: string; tob: string; pob: string; name: string; gender: string; cohort: string;
     token?: string; lat?: string; lon?: string; last_topic?: string; last_summary?: string; wallet_balance?: string; holdout?: string;
+    chat_language?: string;              // if the query already knows it, chat_language is set straight away — no picker shown
   };
   cohort_map?: Record<string, string>;   // their journey name → our cohort (see config.cohorts)
+  // the query's language word (e.g. "Hindi") → our config.languages key (e.g. "hinglish"); matched case-insensitively.
+  // An unmapped or unrecognised value is simply left unset — the usual in-chat picker shows instead, never an error.
+  language_map?: Record<string, string>;
   links?: { user_id_pattern?: string; require_signature?: boolean; lookback_days?: number; one_chat_every_days?: number };
   on_click?: { enabled?: boolean; cache_minutes?: number; list_ready_at?: string; wait_on_miss_seconds?: number };
   lagna_needs_city?: boolean;            // true: a place matched only to its state gets a Moon chart, not a guessed lagna
@@ -33,6 +39,8 @@ export type SyncReport = {
   charts: { lagna: number; moon: number; rashiUncertain: number; dashaUncertain: number }; // no birth time and it changes that day
   severalProfiles: number; // users with more than one kundli profile (the most complete one is used)
   noName: number;
+  // v3: no longer skipped — synced with no chart; the chat asks them for it (see chat.ts's needs_dob status).
+  noDob: number;
   places: { city: number; state: number; latlon: number; none: number };
   journeys: Record<string, number>; unmappedJourneys: string[];
 };
@@ -94,7 +102,7 @@ export function rowsToUsers(
   const c = src.columns;
   const report: SyncReport = {
     rows: rows.length, synced: 0, holdout: 0, skipped: [], charts: { lagna: 0, moon: 0, rashiUncertain: 0, dashaUncertain: 0 },
-    severalProfiles: 0, noName: 0,
+    severalProfiles: 0, noName: 0, noDob: 0,
     places: { city: 0, state: 0, latlon: 0, none: 0 }, journeys: {}, unmappedJourneys: [],
   };
   const users: Synced[] = [];
@@ -128,7 +136,7 @@ export function rowsToUsers(
     if (c.holdout && /^(1|true|yes|holdout)$/i.test(str(r[c.holdout]))) { report.holdout++; return; }
 
     const dob = normaliseDate(str(r[c.dob]));
-    if (!dob) return skip(`date of birth "${str(r[c.dob])}" is not a date`);
+    if (!dob) report.noDob++;
     const tob = normaliseTime(str(r[c.tob]));
     const name = str(r[c.name]); // optional: without it the chat greets "Namaste ji" and says "aap"
     if (!name) report.noName++;
@@ -142,29 +150,42 @@ export function rowsToUsers(
     const placeOk = hasLatLon || found?.precision === "city" || (found?.precision === "state" && src.lagna_needs_city === false);
     report.places[hasLatLon ? "latlon" : found ? found.precision : "none"]++;
 
-    let chart;
-    try {
-      chart = computeChart({ dob, tob, lat: coords.lat, lon: coords.lon }, opts.now);
-    } catch {
-      return skip("could not compute the chart");
-    }
-    const lagna = tob && placeOk ? chart.lagna : null;
-    // Without a birth time, check whether the rashi / dasha could be different at another hour of that day.
-    // If so, the chat never states it (and no kundli card is shown when the rashi itself is uncertain).
+    // No valid dob: synced anyway, with no chart yet — chat.ts's needs_dob screen asks them for it directly
+    // (v3), carrying along whatever else the row did have (name/tob/pob/cohort) rather than dropping them.
+    let chart: ReturnType<typeof computeChart> | null = null;
+    let lagna: string | null = null;
     let moonCertain = true, dashaCertain = true;
-    if (!tob) {
-      const early = computeChart({ dob, tob: "00:01", ...coords }, opts.now), late = computeChart({ dob, tob: "23:59", ...coords }, opts.now);
-      moonCertain = early.moon_sign === late.moon_sign;
-      dashaCertain = moonCertain && early.mahadasha === late.mahadasha && early.antardasha === late.antardasha;
-      if (!moonCertain) report.charts.rashiUncertain++;
-      else if (!dashaCertain) report.charts.dashaUncertain++;
+    if (dob) {
+      try {
+        chart = computeChart({ dob, tob, lat: coords.lat, lon: coords.lon }, opts.now);
+      } catch {
+        return skip("could not compute the chart");
+      }
+      lagna = tob && placeOk ? chart.lagna : null;
+      // Without a birth time, check whether the rashi / dasha could be different at another hour of that day.
+      // If so, the chat never states it (and no kundli card is shown when the rashi itself is uncertain).
+      if (!tob) {
+        const early = computeChart({ dob, tob: "00:01", ...coords }, opts.now), late = computeChart({ dob, tob: "23:59", ...coords }, opts.now);
+        moonCertain = early.moon_sign === late.moon_sign;
+        dashaCertain = moonCertain && early.mahadasha === late.mahadasha && early.antardasha === late.antardasha;
+        if (!moonCertain) report.charts.rashiUncertain++;
+        else if (!dashaCertain) report.charts.dashaUncertain++;
+      }
+      report.charts[lagna ? "lagna" : "moon"]++;
     }
-    report.charts[lagna ? "lagna" : "moon"]++;
 
     const journey = str(r[c.cohort]);
     const mapped = src.cohort_map?.[journey] ?? (cfg.cohorts?.[journey] ? journey : null);
     if (journey && !mapped) unmapped.add(journey);
     report.journeys[journey || "(empty)"] = (report.journeys[journey || "(empty)"] ?? 0) + 1;
+
+    // Known already → the in-chat language picker is skipped entirely (same effect as chooseLanguage()).
+    // Case-insensitive, since the query gives a word ("Hindi"), not our internal key ("hinglish").
+    const langRaw = c.chat_language ? str(r[c.chat_language]) : "";
+    const mapEntry = langRaw && src.language_map
+      ? Object.entries(src.language_map).find(([k]) => k.toLowerCase() === langRaw.toLowerCase())?.[1]
+      : undefined;
+    const chatLanguage = mapEntry ?? (langRaw && cfg.languages?.[langRaw.toLowerCase()] ? langRaw.toLowerCase() : null);
 
     const topic = c.last_topic ? str(r[c.last_topic]).toLowerCase() : "";
     const balance = c.wallet_balance ? Number(r[c.wallet_balance]) : NaN;
@@ -180,16 +201,17 @@ export function rowsToUsers(
         user_id: userId,
         name,
         gender: /^f/i.test(str(r[c.gender])) ? "female" : /^m/i.test(str(r[c.gender])) ? "male" : null,
-        dob, tob: tob || null, pob: pobText || null,
+        dob: dob ?? "", tob: tob || null, pob: pobText || null,
         language: "Hinglish",
-        moon_sign: chart.moon_sign, mahadasha: chart.mahadasha, antardasha: chart.antardasha, lagna,
+        moon_sign: chart?.moon_sign ?? "", mahadasha: chart?.mahadasha ?? "", antardasha: chart?.antardasha ?? "", lagna,
         // Without a birth time the Moon's degree is uncertain, so it isn't drawn; slow planets are placed as usual.
-        planets: tob ? chart.planets : Object.fromEntries(Object.entries(chart.planets).filter(([k]) => k !== "Mo")),
-        moon_certain: moonCertain,
-        dasha_certain: dashaCertain,
+        planets: !chart ? null : tob ? chart.planets : Object.fromEntries(Object.entries(chart.planets).filter(([k]) => k !== "Mo")),
+        moon_certain: dob ? moonCertain : undefined,
+        dasha_certain: dob ? dashaCertain : undefined,
         last_topic: topic && cfg.topics[topic] ? topic : null,
         last_summary: c.last_summary ? str(r[c.last_summary]) || null : null,
         cohort: mapped ?? cfg.default_cohort ?? null,
+        chat_language: chatLanguage,
         wallet_balance: Number.isFinite(balance) ? balance : null,
       },
     });

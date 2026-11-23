@@ -23,16 +23,16 @@ experiment:
 timing:
   free_seconds: 120                 # length of the free chat
   clock_starts: open                # open = when the chat page opens (AT-style urgency) · first_message = at the first question
-  pull_until_seconds_left: 20       # from here, Omkar leaves them on one open thread (the hook) instead of new insights
-  idle_nudge_seconds: 25            # user quiet this long → Omkar carries on by himself, until the chat ends. 0 = off
-  closing_at_seconds_left: 15       # at 15 s left Omkar sends the closing line (or answers a last message with it)
+  pull_until_seconds_left: 20       # from here, Sitara leaves them on one open thread (the hook) instead of new insights
+  idle_nudge_seconds: 25            # user quiet this long → Sitara carries on by herself, until the chat ends. 0 = off
+  closing_at_seconds_left: 15       # at 15 s left Sitara sends the closing line (or answers a last message with it)
   handoff_card_at_seconds_left: 10  # app shows the hand-off card
   cta_countdown_seconds: 5          # the button counts down this long when the card appears, then stays (nothing opens by itself). 0 = no countdown
   llm_timeout_ms: 18000              # slower than this → send fallback_reply instead. Real gemini-3.5-flash-lite
                                       # latency here has typically run 10-17s; 18000 covers most of it. Time spent
                                       # waiting on the model no longer drains the user's free_seconds — see
                                       # SessionState.llmWaitMs / secondsLeft() — so a long timeout is now safe to use.
-  # The pause right after the opening greeting, before Omkar proactively asks what they want to know (unknown
+  # The pause right after the opening greeting, before Sitara proactively asks what they want to know (unknown
   # topic) or their own predefined topic question (known topic) — only if they haven't said anything by then.
   # "Typing…" shows at topic_wait_typing_seconds; the question is sent at topic_wait_seconds.
   topic_wait_typing_seconds: 5
@@ -47,13 +47,13 @@ pacing:
   typing_max_ms: 3000         # longest "typing…" before a message
   between_messages_ms: 350    # gap after each message before the next "typing…"
   system_note_ms: 1100        # how long "Connecting you to…" / "has joined" each hold
-  # The whole first-answer reveal (empathy → "Aapki kundli dekh raha hoon…" → kundli card → chart line → finding →
+  # The whole first-answer reveal (empathy → "Aapki kundli dekh rahi hoon…" → kundli card → chart line → finding →
   # hook) runs on this same deliberate pause-then-type rhythm throughout, instead of the usual length-based typing —
   # so it reads as one slow, considered moment, not a quick burst of bubbles. kundli_gap_ms/kundli_ms govern only the
   # one transition into the card itself; post_kundli_gap_ms/post_kundli_typing_ms govern every other bubble in the
   # reveal (including the empathy opener and the intro line, before the card). The one exception is
   # dramatic_gap_ms: a longer pause used at exactly two moments — right after the card, before the chart line (so
-  # that specific reveal feels weightier), and before Omkar's one real engage question later in the chat.
+  # that specific reveal feels weightier), and before Sitara's one real engage question later in the chat.
   kundli_gap_ms: 2500          # silence before "typing…" starts, leading into the kundli card
   kundli_ms: 2500              # "typing…" before the kundli card appears, once it starts
   post_kundli_gap_ms: 2500     # silence before "typing…" starts, for every other bubble in the reveal
@@ -73,13 +73,13 @@ model:
   max_output_tokens: 500            # room for 3 short bubbles (raise it if thinking goes above minimal: thinking uses it too)
 
 persona:
-  name: "Astro Omkar"               # shown in the chat header and used by the AI as its own name
-  avatar_url: "/persona/omkar.jpg"  # square photo: a file in public/ ("/persona/x.jpg") or an https:// link. "" shows the initial
+  name: "Astro Sitara"              # shown in the chat header and used by the AI as its own name
+  avatar_url: "/persona/sitara.jpg" # square photo: a file in public/ ("/persona/x.jpg") or an https:// link. "" shows the initial
   header_label: ""                  # optional line before the status in the header (e.g. "Vedic astrology"). "" = just the status
   verified_badge: true              # green tick next to the name in the header, like AT
   voice: >-
     A warm, experienced Vedic astrologer. Simple everyday words, respectful "aap". Calm and confident, never pushy.
-  disclosure_line: "Main Astrolokal ka Astro Sahayak hoon 🙏"
+  disclosure_line: "Main Astrolokal ki Astro Sahayika hoon 🙏"
 
 style:
   max_bubbles: 3                    # most bubbles in one reply
@@ -126,7 +126,7 @@ reply_instructions:
     All three bubbles may run up to about 15 words if the sentence genuinely needs it; don't force an unnatural cut.
     If they asked WHEN, bubble 2 answers with a phase, not a date: e.g. that it opens up once their current
     antardasha (the one in ABOUT THEM) changes, or that it is already moving in this phase. Don't ask anything yet.
-  # they haven't typed anything and went quiet: Omkar starts ({topic} = their topic, or "their life right now")
+  # they haven't typed anything and went quiet: Sitara starts ({topic} = their topic, or "their life right now")
   start: >-
     They haven't asked anything yet. Start the reading yourself, on {topic}: one warm, specific thing you see in their chart
     and the planet behind it, so they feel seen and want to reply.
@@ -176,8 +176,8 @@ reply_instructions:
     This is the ENTIRE reply — exactly TWO bubbles, nothing else. This is their very first reply after the kundli
     reveal ended.
     Bubble 1: a short, confident pivot into looking closer at what they asked — direct and sure of yourself, not
-    soft or vague, in your own words, e.g. "Rukiye, detail mein dekh ke batata hoon.", "Ek second, isko gehraai se
-    dekh leta hoon.", "Rukiye zara, is baare mein aur dekhta hoon." — write your own version in this tone; never use
+    soft or vague, in your own words, e.g. "Rukiye, detail mein dekh ke batati hoon.", "Ek second, isko gehraai se
+    dekh leti hoon.", "Rukiye zara, is baare mein aur dekhti hoon." — write your own version in this tone; never use
     one of these examples word-for-word.
     Bubble 2: ONE short question (the bubble must end in "?") about ONE fact tied to the SPECIFIC thing they told
     you — never a generic version of their topic — about something already true or already happened: how long
@@ -198,7 +198,7 @@ reply_instructions:
     another question here.
   engage_stall: >-
     This is the ENTIRE reply — nothing else, and don't repeat an earlier line. In two bubbles: first, say in your
-    own words that you are still looking closely at that one specific thing for them ("abhi bhi isi par dekh raha
+    own words that you are still looking closely at that one specific thing for them ("abhi bhi isi par dekh rahi
     hoon" style); second, one positive-leaning line that stops dead right after the word "agar" or "magar" —
     nothing after it, no "…", no punctuation, the sentence is simply left unfinished (e.g. "Kuch achha dikh raha
     hai magar"). This "agar"/"magar" bubble is the only case where a sentence may stay incomplete. Different from
@@ -227,7 +227,7 @@ reply_instructions:
 # Lines the ENGINE sends word-for-word (no AI). Edit freely; {variables} are filled in.
 # Available: {name} {moon_sign} {mahadasha} {antardasha} {last_topic_label} {persona_name} {monthly_line}
 scripted:
-  # After "Astro Omkar has joined": a short greeting. The kundli is NOT shown yet. opening[1] is used when the
+  # After "Astro Sitara has joined": a short greeting. The kundli is NOT shown yet. opening[1] is used when the
   # topic isn't known; returning_greeting replaces it for a returning user whose topic is already known.
   opening:
     - "Namaste {name} ji 🙏"
@@ -244,7 +244,7 @@ scripted:
     pyaar: "Pyaar ke baare mein jaanna hai?"
     default: "Shaadi, naukri, paisa ya pyaar — kis baare mein jaanna hai?"
   # Stage "gather"'s own fallback once a topic is known (see gatherFollowupLine in engine.ts): a real clarifying
-  # follow-up, not topic_hook's yes/no confirmation — so a model failure here still reads like Omkar listened.
+  # follow-up, not topic_hook's yes/no confirmation — so a model failure here still reads like Sitara listened.
   topic_followup:
     shaadi: "Shaadi ko lekar abhi kya dikkat aa rahi hai?"
     naukri: "Naukri mein abhi kya dikkat aa rahi hai?"
@@ -255,27 +255,27 @@ scripted:
   # No rashi name here: Vedic rashi (Moon-based, sidereal) routinely differs from the Western sun sign someone
   # already knows, and naming it invites a "that's wrong" objection for no reason — the kundli card already
   # shows it as a fact label, so nothing is lost. Dasha stays: nobody has a prior belief about their own
-  # dasha to contradict, so it's a free, uncontested "Omkar knows something real about me" moment.
-  chart_intro: "Aapki kundli dekh raha hoon…"
-  # Framed as an observation ("jaisa ki main dekh pa raha hoon"), not a flat fact statement — and kept separate
+  # dasha to contradict, so it's a free, uncontested "Sitara knows something real about me" moment.
+  chart_intro: "Aapki kundli dekh rahi hoon…"
+  # Framed as an observation ("jaisa ki main dekh pa rahi hoon"), not a flat fact statement — and kept separate
   # from the finding bubble that follows it (reply_instructions.answer), so the two never repeat the same idea.
-  chart_line: "Jaisa ki main dekh pa raha hoon, abhi aapki kundli mein {mahadasha} ka samay chal raha hai."
+  chart_line: "Jaisa ki main dekh pa rahi hoon, abhi aapki kundli mein {mahadasha} ka samay chal raha hai."
   # No birth time → dasha uncertain: used instead of chart_line above, same place, same pacing — never names a
   # planet or dasha we're not sure is right. Positive and tied to THEIR topic instead (never a generic "something
   # good"), keyed the same way as topic_hook/topic_followup; "default" covers an unknown topic.
   chart_line_unsure:
-    shaadi: "Jaisa ki main dekh pa raha hoon, aapki kundli mein shaadi ka yog shubh hai."
-    naukri: "Jaisa ki main dekh pa raha hoon, aapki kundli mein career ka yog bright hai."
-    paisa: "Jaisa ki main dekh pa raha hoon, aapki kundli mein paise ka yog majboot hai."
-    parivaar: "Jaisa ki main dekh pa raha hoon, aapki kundli mein parivaar ka yog sukhad hai."
-    pyaar: "Jaisa ki main dekh pa raha hoon, aapki kundli mein pyaar ka yog gehra hai."
-    default: "Jaisa ki main dekh pa raha hoon, aapki kundli mein abhi ka samay accha hai."
+    shaadi: "Jaisa ki main dekh pa rahi hoon, aapki kundli mein shaadi ka yog shubh hai."
+    naukri: "Jaisa ki main dekh pa rahi hoon, aapki kundli mein career ka yog bright hai."
+    paisa: "Jaisa ki main dekh pa rahi hoon, aapki kundli mein paise ka yog majboot hai."
+    parivaar: "Jaisa ki main dekh pa rahi hoon, aapki kundli mein parivaar ka yog sukhad hai."
+    pyaar: "Jaisa ki main dekh pa rahi hoon, aapki kundli mein pyaar ka yog gehra hai."
+    default: "Jaisa ki main dekh pa rahi hoon, aapki kundli mein abhi ka samay accha hai."
   # Sent at closing_at_seconds_left: the last open thread, just before the hand-off card.
   closing:
     - "{name} ji, ek aur zaroori baat dikh rahi hai…"
   # When the model call fails or gets fully guard-rejected (any stage except "gather" — that one has its own
   # fallback, see topicPromptLine in engine.ts). Deliberately a doubt-hook line, not a flat dead-end statement —
-  # a model failure shouldn't feel like the conversation stopped, it should feel like Omkar is still reading.
+  # a model failure shouldn't feel like the conversation stopped, it should feel like Sitara is still reading.
   fallback_reply: "Par is samay kuch baaton ka aapko khaas dhyaan rakhna hoga."
   # Used instead of the line above if it was already said earlier in this chat (two separate stages failing back
   # to back) — so a second failure never repeats the exact same line either.
@@ -342,7 +342,7 @@ handoff:
 # What the chat uses. Switch off per cohort to test what actually moves the tap rate.
 assets:
   kundli: true        # the kundli card + "Rashi X, dasha Y ki." with the first answer
-  last_chat: true     # their last consult's summary goes into the prompt (so Omkar can refer to it)
+  last_chat: true     # their last consult's summary goes into the prompt (so Sitara can refer to it)
 
 # Who gets the chat. Every user in the list has a cohort; a cohort changes ONLY what is different for it
 # (any section below except experiment). Empty = the main config as is. Bump prompt_version when you edit one.
@@ -360,9 +360,6 @@ cohorts:
   rc1_control: {}
   rc2_control: {}
   rc3_control: {}
-  # Phase 5: someone whose user_id Redash never sent us — they self-entered their own details instead.
-  # Kept separate so /admin never mixes them into the real pilot's funnel numbers.
-  self_serve: {}
 
 # A second axis, independent of cohorts: which language the chat is shown in (scripted lines, UI copy, guardrails).
 # "hinglish" is today's whole experience, unchanged. Tamil/Telugu/Malayalam content lands in a later change —
@@ -374,7 +371,7 @@ languages:
   # DRAFT — Tamil/Telugu/Malayalam below are a first pass, not yet reviewed by a native speaker.
   # Before any real user sees these: a native speaker must check scripted/ui copy for correctness and tone,
   # and separately sign off guardrails.crisis and guardrails.banned, since those are the safety-critical part.
-  # Default script is Romanized (same convention as Hinglish); Omkar still adapts to native script if the user
+  # Default script is Romanized (same convention as Hinglish); Sitara still adapts to native script if the user
   # types in it mid-chat (see prompt_template.md). Astrology terms (rashi/dasha/mahadasha names) are left as-is —
   # they're pan-Indian Sanskrit-derived terms already used this way in Tamil/Telugu/Malayalam astrology too.
   ta:
@@ -627,7 +624,7 @@ languages:
 # Native-script display labels for the "pick your language" screen (Phase 4) — shown before anyone has chosen a
 # language, so these must be readable without relying on any other language. Not used anywhere else (the chat
 # itself defaults to Romanized script per languages.<key>, same as Hinglish).
-# Brand shown on the picker screen itself — this is before anyone has met Omkar, so it's AstroLokal, not the
+# Brand shown on the picker screen itself — this is before anyone has met Sitara, so it's AstroLokal, not the
 # persona. "" for the logo shows an initial "A" (same fallback rule as persona.avatar_url); swap in the real
 # logo file (drop it in public/, e.g. "/logo/astrolokal.png") or an https:// link whenever it's ready.
 language_picker_brand_name: "AstroLokal"
@@ -682,6 +679,7 @@ source:
     name: name                # optional: not in the query yet. Without it the chat says "Namaste ji 🙏" and uses "aap"
     gender: gender            # optional: not in the query yet
     cohort: rc_bucket         # the journey/cohort label (decided on the business side); used for analytics and overrides
+    chat_language: chat_language   # known already → the in-chat language picker is skipped (see language_map below)
     # optional, if the query has them:
     # lat: pob_lat
     # lon: pob_lon
@@ -691,6 +689,10 @@ source:
     # holdout: holdout         # 1 = control group: never messaged, and their link never opens a chat
   # query value → our cohort (see cohorts). The *_CONTROL values appear if the query keeps the control label (rc1_control…)
   cohort_map: { RC1: rc1, RC2: rc2, RC3: rc3, RC4: rc4, "RC5+": rc5_plus, RC1_CONTROL: rc1_control, RC2_CONTROL: rc2_control, RC3_CONTROL: rc3_control }
+  # query value (chat_language column) → our languages key; matched case-insensitively. Hindi has no dedicated
+  # language of its own (see languages below) so it goes to hinglish, our default. Anything else (unmapped,
+  # blank, or a value not in this list) just leaves chat_language unset — the usual in-chat picker shows instead.
+  language_map: { Hindi: hinglish, Tamil: ta, Telugu: te, Malayalam: ml }
   lagna_needs_city: true      # a birth place matched only to its state gets a Moon chart instead of a guessed lagna
   links:
     user_id_pattern: "^[0-9]{1,15}$"   # what a valid user_id looks like; anything else gets the "link isn't working" page
@@ -703,7 +705,7 @@ source:
     list_ready_at: "08:30"             # IST: today's list exists after this (journeys run 8:00–8:30); an older stored result is re-run
     wait_on_miss_seconds: 45           # a user missing from an old result waits up to this long for the re-run (it takes ~30 s)
 
-# Screen copy. The conversation (Omkar's lines, the hand-off card) is Hinglish; everything around it is English.
+# Screen copy. The conversation (Sitara's lines, the hand-off card) is Hinglish; everything around it is English.
 # {name} {moon_sign} {mahadasha} {dob_label} {tob_label} {pob} {gender_label} are filled in.
 ui:
   # system notes at the start, like an astrologer joining (English, centred pills)

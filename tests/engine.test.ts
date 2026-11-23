@@ -116,7 +116,7 @@ test("clean reply passes", () => {
   assert.equal(r.bubbles.length, 2); assert.deepEqual(r.flags, []);
 });
 
-test("guard lets Omkar echo the user's past, and joins a bubble cut mid-sentence", () => {
+test("guard lets Sitara echo the user's past, and joins a bubble cut mid-sentence", () => {
   assert.deepEqual(g("Itni mehnat, 2 saal se lage hain.").bubbles, ["Itni mehnat, 2 saal se lage hain."]);
   assert.deepEqual(g("Aap mehnati hain, par||Shani rok raha hai.").bubbles, ["Aap mehnati hain, par Shani rok raha hai."]);
   assert.equal(g("Yog tay hai.").bubbles.length, 0);
@@ -318,11 +318,11 @@ test("model gets recent history plus the new message", async () => {
 
 // ── Persona photo ──
 test("persona.avatar_url: accepts a public file, an https link or nothing; rejects anything else", () => {
-  for (const ok of ["", "/persona/omkar.jpg", "https://cdn.astrolokal.com/omkar.webp"]) {
+  for (const ok of ["", "/persona/sitara.jpg", "https://cdn.astrolokal.com/sitara.webp"]) {
     const c = clone(); c.persona.avatar_url = ok;
     assert.deepEqual(validateConfig(c, L.template), [], ok);
   }
-  for (const bad of ["omkar.jpg", "http://insecure.com/a.jpg", "/persona/omkar.gif", "javascript:alert(1)"]) {
+  for (const bad of ["sitara.jpg", "http://insecure.com/a.jpg", "/persona/sitara.gif", "javascript:alert(1)"]) {
     const c = clone(); c.persona.avatar_url = bad;
     assert.match(validateConfig(c, L.template).join(), /avatar_url/, bad);
   }
@@ -336,7 +336,7 @@ test("persona.avatar_url pointing to a missing file fails the config check", asy
   try {
     mkdirSync(join(root, "config"));
     cpSync("config/prompt_template.md", join(root, "config", "prompt_template.md"));
-    const yaml = readFileSync("config/config.yaml", "utf8").replace('avatar_url: "/persona/omkar.jpg"', 'avatar_url: "/persona/nobody.jpg"');
+    const yaml = readFileSync("config/config.yaml", "utf8").replace('avatar_url: "/persona/sitara.jpg"', 'avatar_url: "/persona/nobody.jpg"');
     writeFileSync(join(root, "config", "config.yaml"), yaml);
     assert.throws(() => load(join(root, "config")), /public\/persona\/nobody\.jpg does not exist/);
   } finally {
@@ -363,7 +363,7 @@ test("model settings are validated", () => {
   assert.match(validateConfig(d, L.template).join(), /model.thinking/);
 });
 
-test("Omkar never repeats a line he already said (case and punctuation ignored)", () => {
+test("Sitara never repeats a line she already said (case and punctuation ignored)", () => {
   const { ctx, st } = fresh(rafeeq);
   const r = guardReply(L, ctx, st, "Prem vivah ke yog hain || Shani ka asar hai", 3, ["prem vivah ke yog hain."]);
   assert.deepEqual(r.bubbles, ["Shani ka asar hai"]);
@@ -378,7 +378,7 @@ test("each reply has a job: gather context first, then answer, then engage, then
   assert.match(buildSystemPrompt(L, ctx, shown, 3, 15), /ONE open thread/);
   assert.match(buildSystemPrompt(L, ctx, st, 2, 90, true), /gone quiet[\s\S]*Carry on by yourself/);
   assert.match(buildSystemPrompt(L, ctx, { ...shown, answered: false }, 3, 90), /Give the real answer now/,
-    "if Omkar opened the chart himself, their first question still gets the real answer (stage \"answer\", not \"gather\" again — chartShown is already true)");
+    "if Sitara opened the chart herself, their first question still gets the real answer (stage \"answer\", not \"gather\" again — chartShown is already true)");
   assert.match(buildSystemPrompt(L, ctx, { ...st, clarifyRounds: 1 }, 2, 110), /Give the real answer now/,
     "gather's one allowed round (MAX_CLARIFY_ROUNDS = 1) is already used: forced into a real answer, never a second gather round");
 });

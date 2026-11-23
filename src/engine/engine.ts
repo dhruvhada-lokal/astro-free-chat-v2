@@ -56,7 +56,7 @@ export type Config = {
   timing: {
     free_seconds: number; clock_starts: "open" | "first_message"; pull_until_seconds_left: number; idle_nudge_seconds: number; cta_countdown_seconds?: number;
     closing_at_seconds_left: number; handoff_card_at_seconds_left: number; llm_timeout_ms: number;
-    // The pause right after the opening greeting, before Omkar proactively asks what they want to know (unknown
+    // The pause right after the opening greeting, before Sitara proactively asks what they want to know (unknown
     // topic) or their predefined topic question (known topic) — only fires if they haven't said anything by then.
     topic_wait_typing_seconds: number; topic_wait_seconds: number;
   };
@@ -410,6 +410,8 @@ export function validateConfig(cfg: Config, template: string): string[] {
       "source.links.one_chat_every_days must be a whole number 0–90 (0 = no limit)");
     for (const [from, to] of Object.entries(src.cohort_map ?? {}))
       need(!!cfg.cohorts?.[to], `source.cohort_map: "${from}" → "${to}", but "${to}" is not in cohorts`);
+    for (const [from, to] of Object.entries(src.language_map ?? {}))
+      need(!!cfg.languages?.[to], `source.language_map: "${from}" → "${to}", but "${to}" is not in languages`);
   }
   const as = cfg.assets ?? { kundli: true, last_chat: true };
   need(typeof as.kundli === "boolean" && typeof as.last_chat === "boolean", "assets.kundli and assets.last_chat must be true or false");
@@ -420,7 +422,7 @@ export function validateConfig(cfg: Config, template: string): string[] {
   need(typeof cfg.persona?.name === "string" && cfg.persona.name.trim().length > 0, "persona.name is missing");
   const avatar = cfg.persona?.avatar_url ?? "";
   need(avatar === "" || /^\/[\w./-]+\.(jpe?g|png|webp)$/i.test(avatar) || /^https:\/\/\S+$/.test(avatar),
-    `persona.avatar_url must be "", a file in public/ like "/persona/omkar.jpg", or an https:// link (got "${avatar}")`);
+    `persona.avatar_url must be "", a file in public/ like "/persona/sitara.jpg", or an https:// link (got "${avatar}")`);
   for (const v of placeholders(cfg.handoff?.utm ?? "")) need(LINK_VARS.includes(v), `handoff.utm uses unknown {${v}}`);
 
   const g = cfg.guardrails;
@@ -807,7 +809,7 @@ export function topicPromptLine(cfg: Config, ctx: Context, st?: SessionState): s
 
 /** Stage "gather"'s own fallback, when its LLM call fails AFTER a topic is already known: topic_hook ("Naukri ke
  *  baare mein jaanna hai?") is a yes/no topic CONFIRMATION, not a real clarifying follow-up — reusing it here reads
- *  as if Omkar didn't actually take in what they said. topic_followup asks what's actually going on instead, same
+ *  as if Sitara didn't actually take in what they said. topic_followup asks what's actually going on instead, same
  *  as the model itself is told to ask. Falls back to topicPromptLine when the topic truly isn't known yet (nothing
  *  to follow up ON), or when a language hasn't been given its own topic_followup lines. */
 export function gatherFollowupLine(cfg: Config, ctx: Context, st?: SessionState): string {
@@ -982,7 +984,7 @@ const sameLine = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, "").
 
 export function guardReply(
   L: Loaded, ctx: Context, st: SessionState, raw: string, maxBubbles = L.cfg.style.max_bubbles,
-  previous: string[] = [], // Omkar's earlier lines in this chat: never say the same thing twice
+  previous: string[] = [], // Sitara's earlier lines in this chat: never say the same thing twice
 ): Guarded {
   const said = new Set(previous.map(sameLine));
   const { cfg } = L;
@@ -1126,7 +1128,7 @@ async function generate(
     log.clarifying = true;
     const line = gatherFollowupLine(cfg, ctx, st);
     // The topic question may already have gone out once (route()'s own deterministic clarify_topic, or an
-    // earlier gather fallback) — Omkar must never say the exact same line twice in one chat, so fall through
+    // earlier gather fallback) — Sitara must never say the exact same line twice in one chat, so fall through
     // to the ordinary doubt-hook fallback instead of asking the identical question again.
     if (previous.some((p) => sameLine(p) === sameLine(line))) return [fallbackLine(cfg, ctx, previous)];
     return [line];
@@ -1185,7 +1187,7 @@ export async function runTurn(
 export const QUIET_MARKER = "(…)";
 
 /**
- * The user has gone quiet: Omkar carries on by himself (or, near the end, sends the closing lines).
+ * The user has gone quiet: Sitara carries on by herself (or, near the end, sends the closing lines).
  * Nothing is sent after the chat is closed or to someone in distress.
  */
 export async function runNudge(
@@ -1198,7 +1200,7 @@ export async function runNudge(
   if (secondsLeft <= L.cfg.timing.closing_at_seconds_left) {
     st.closed = true;
     const log = newLog(L, ctx, st, "closing_quiet", "", secondsLeft);
-    // If Omkar already left them on an open thread, a second one would read as a script: just close.
+    // If Sitara already left them on an open thread, a second one would read as a script: just close.
     log.bubbles = st.hooked ? [] : closingBubbles(L.cfg, ctx);
     return { bubbles: log.bubbles, log };
   }

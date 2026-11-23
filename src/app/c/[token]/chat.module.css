@@ -343,7 +343,7 @@
   animation: shine 2.4s ease-in-out 0.6s infinite;
 }
 
-/* ── Self-serve onboarding (Phase 5) — Omkar's own bubbles ask for it; the form is an inline card, like the
+/* ── In-chat onboarding (v3) — Sitara's own bubbles ask for it; the form is an inline card, like the
    kundli card, that continues the same conversation rather than a separate page or dialog. ── */
 .onboard {
   align-self: flex-start;

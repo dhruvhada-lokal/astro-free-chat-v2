@@ -3,7 +3,7 @@
 // The clock: by default the free time starts when the chat page opens (timing.clock_starts: open), which gives
 // the AT-style urgency; "first_message" starts it at the first question instead. The server owns the clock;
 // the browser only displays it.
-// Omkar replies to every message, and when the user goes quiet (timing.idle_nudge_seconds) he carries on by himself,
+// Sitara replies to every message, and when the user goes quiet (timing.idle_nudge_seconds) she carries on by herself,
 // until the closing line at closing_at_seconds_left. Nothing is ever sent after the chat has ended.
 
 import {
@@ -17,6 +17,8 @@ import type { Session, StoredMessage } from "./store.ts";
 import { callModel } from "./llm.ts";
 import { buildKundli } from "./kundli.ts";
 import type { KundliView } from "./kundli.ts";
+import { applySubmittedDob } from "./onboard.ts";
+import type { DobInput } from "./onboard.ts";
 
 export const MAX_USER_MESSAGES = 15;
 const DUPLICATE_WINDOW_MS = 5000; // same text again within this window = a double tap or a retry, not a new question
@@ -55,7 +57,7 @@ export function config(): Loaded {
 }
 
 export type View = {
-  status: "invalid" | "active" | "ended" | "choose_language";
+  status: "invalid" | "active" | "ended" | "choose_language" | "needs_dob";
   justStarted: boolean;        // true only on the very first open: the page animates the opening once
   clockStarted: boolean;       // with clock_starts: first_message, false until the first question
   ui: Record<string, string>;
@@ -63,7 +65,7 @@ export type View = {
   messages: StoredMessage[];
   secondsLeft: number;
   freeSeconds: number;
-  idleNudgeSeconds: number;    // 0 = Omkar never speaks first
+  idleNudgeSeconds: number;    // 0 = Sitara never speaks first
   topicWaitTypingSeconds: number; // the post-greeting pause before "typing…" shows, if they haven't said anything
   topicWaitSeconds: number;       // ...and then the proactive topic question is sent
   topicAsked: boolean;            // that proactive question has already gone out — the page stops waiting for it
@@ -86,7 +88,7 @@ export type View = {
   promptVersion: string;
   languageOptions: { key: string; label: string }[]; // on every status — the onboarding flow's own, local language pick needs this before any token/session exists
   languagePrompt: string;      // the line shown above the language buttons
-  brandName: string;           // "AstroLokal" — on every status, for screens shown before Omkar (picker, onboarding)
+  brandName: string;           // "AstroLokal" — on every status, for screens shown before Sitara (picker, onboarding)
   brandLogo: string;
   onboardingLabels: Record<string, Partial<OnboardLabels>>; // self-serve onboarding form copy, by language key
 };
@@ -153,6 +155,18 @@ function languageChoiceView(L: Loaded, ctx: Context, token: string): View {
   };
 }
 
+/** Shown instead of the opening when a real user (user_id on file) has no dob yet (v3): no session, no clock —
+ *  same shape as languageChoiceView. Their chat_language is already known by this point (checked first in
+ *  startOrResume), so the labels are resolved to their language here rather than left for the client to pick. */
+function needsDobView(L: Loaded, ctx: Context, token: string): View {
+  const labels = L.cfg.onboarding_labels?.[ctx.user.chat_language ?? ""] ?? {};
+  return {
+    ...viewBase(L, ctx, token),
+    status: "needs_dob", justStarted: false, clockStarted: false, topicAsked: false,
+    ui: labels as Record<string, string>, messages: [], secondsLeft: 0, closed: false, crisis: false, chart: null, upcomingEngageTurn: 0,
+  };
+}
+
 function view(L: Loaded, ctx: Context | null, s: Session | null, token: string, justStarted = false): View {
   const base = viewBase(L, ctx, token);
   if (!ctx || !s) {
@@ -204,19 +218,25 @@ async function userConfig(token: string): Promise<{ L: Loaded; ctx: Context | nu
 
 /**
  * Opens the chat. The first visit writes the opening, like an astrologer joining:
- * the user's details → "Connecting you to Astro Omkar…" → "Astro Omkar has joined" → a short greeting that asks
+ * the user's details → "Connecting you to Astro Sitara…" → "Astro Sitara has joined" → a short greeting that asks
  * their question. The kundli comes later, with the first answer. Later visits simply resume.
  * `restart` (local development only) wipes the chat so it can be tried again.
  */
 export async function startOrResume(token: string, restart = false): Promise<View> {
   const { L, ctx } = await userConfig(token);
-  if (!ctx) return view(L, null, null, token);
+  // v3: only a real AstroLokal user_id gets into the bot. Self-serve (no user_id) and any other
+  // user_id-less token are treated exactly like an unknown token — same dead-end as an invalid link.
+  if (!ctx || !ctx.user.user_id) return view(L, null, null, token);
   const store = getStore();
   if (restart && isDev()) await store.resetSessions([token]);
 
-  // No language chosen yet, and nothing has started: show the picker instead of opening (Phase 4).
-  // An already-started chat is never sent back through the picker, even if chat_language were somehow unset.
-  if (!ctx.user.chat_language && !(await store.getSession(token))) return languageChoiceView(L, ctx, token);
+  // Nothing has started yet: the picker (language, then dob) comes before opening — never a concern once a
+  // chat has actually started, even if either were somehow still unset.
+  const existingSession = await store.getSession(token);
+  if (!ctx.user.chat_language && !existingSession) return languageChoiceView(L, ctx, token);
+  // v3: a real user_id with no dob yet (sync.ts no longer drops these) asks for it right in the chat,
+  // instead of the old dead end — language is already known by this point (the check just above).
+  if (!ctx.user.dob && !existingSession) return needsDobView(L, ctx, token);
 
   let created = false;
   const session = await store.withSession<Session>(token, async (existing) => {
@@ -254,7 +274,8 @@ export async function chooseLanguage(token: string, language: string): Promise<V
   if (!TOKEN_RX.test(token)) return view(base, null, null, token);
   const store = getStore();
   const user = await store.getUser(token);
-  if (!user) return view(base, null, null, token);
+  // v3: same rule as startOrResume/submitDob — no real user_id, no chat.
+  if (!user || !user.user_id) return view(base, null, null, token);
   const key = String(language ?? "").trim().toLowerCase();
   if (!base.cfg.languages?.[key]) {
     const L0 = forCohort(base, cohortOf(base.cfg, user));
@@ -262,6 +283,21 @@ export async function chooseLanguage(token: string, language: string): Promise<V
   }
   if (!user.chat_language) await store.upsertUsers([{ ...user, chat_language: key }]);
   return startOrResume(token);
+}
+
+/**
+ * The dob they just typed into the needs_dob screen (v3) — saved onto their own real account (same user_id,
+ * cohort and token, never a new disconnected one), chart built from it, then the chat opens normally.
+ * ok: false with no dob saved (bad input) keeps them on the same needs_dob screen to try again.
+ */
+export async function submitDob(token: string, input: DobInput): Promise<{ ok: boolean; view: View }> {
+  const { L, ctx } = await userConfig(token);
+  if (!ctx || !ctx.user.user_id) return { ok: false, view: view(L, null, null, token) };
+  if (ctx.user.dob) return { ok: true, view: await startOrResume(token) }; // already has one — nothing to do
+  const result = applySubmittedDob(ctx.user, input);
+  if (!result.ok) return { ok: false, view: needsDobView(L, ctx, token) };
+  await getStore().upsertUsers([result.user]);
+  return { ok: true, view: await startOrResume(token) };
 }
 
 type TurnOutcome = {
@@ -273,13 +309,13 @@ type TurnOutcome = {
 };
 
 /**
- * One user message → Omkar's reply (always prompted by the user), persisted with a turn log.
+ * One user message → Sitara's reply (always prompted by the user), persisted with a turn log.
  * First real answer: "kundli dekh raha hoon…" + kundli card + chart line + a 1-line answer.
  * After that: up to 3 short lines.
  */
 export async function sendMessage(token: string, rawText: string): Promise<SendResult> {
   const { L, ctx } = await userConfig(token);
-  if (!ctx) return { ok: false, error: "invalid_token", view: view(L, null, null, token) };
+  if (!ctx || !ctx.user.user_id) return { ok: false, error: "invalid_token", view: view(L, null, null, token) };
   const text = String(rawText ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_USER_CHARS);
   const store = getStore();
 
@@ -330,7 +366,7 @@ function withChart(
   let chartLineIndex: number | null = null;
   if (firstAnswer) {
     s.state.chartShown = true;
-    // Bubble 1 is an empathy opener — reacting to what they just said, before Omkar "looks" at the chart at
+    // Bubble 1 is an empathy opener — reacting to what they just said, before Sitara "looks" at the chart at
     // all — so it goes out ahead of the kundli reveal, not after it with the rest of the finding.
     const [empathy, ...rest] = bubbles;
     if (empathy) reply.push({ role: "ai", text: empathy });
@@ -352,13 +388,13 @@ function withChart(
 }
 
 /**
- * The post-greeting pause (timing.topic_wait_seconds) has passed with nothing said yet: Omkar proactively asks
+ * The post-greeting pause (timing.topic_wait_seconds) has passed with nothing said yet: Sitara proactively asks
  * his topic question — their own predefined one if it's already known, else the generic one. Scripted, no model
  * call, sent at most once (idempotent against a client retry or a user message that arrived in the same moment).
  */
 export async function topicPrompt(token: string): Promise<SendResult> {
   const { L, ctx } = await userConfig(token);
-  if (!ctx) return { ok: false, error: "invalid_token", view: view(L, null, null, token) };
+  if (!ctx || !ctx.user.user_id) return { ok: false, error: "invalid_token", view: view(L, null, null, token) };
   const store = getStore();
 
   const out = await store.withSession<TurnOutcome>(token, async (s) => {
@@ -378,13 +414,13 @@ export async function topicPrompt(token: string): Promise<SendResult> {
 }
 
 /**
- * The user has been quiet for timing.idle_nudge_seconds: Omkar carries on by himself (if he hasn't read the chart
- * yet, he starts the reading). At closing_at_seconds_left he sends the closing line instead. The server checks the
- * silence itself, so a page can't make Omkar talk faster than configured.
+ * The user has been quiet for timing.idle_nudge_seconds: Sitara carries on by herself (if she hasn't read the chart
+ * yet, she starts the reading). At closing_at_seconds_left she sends the closing line instead. The server checks the
+ * silence itself, so a page can't make Sitara talk faster than configured.
  */
 export async function nudge(token: string): Promise<SendResult> {
   const { L, ctx } = await userConfig(token);
-  if (!ctx) return { ok: false, error: "invalid_token", view: view(L, null, null, token) };
+  if (!ctx || !ctx.user.user_id) return { ok: false, error: "invalid_token", view: view(L, null, null, token) };
   const store = getStore();
   const idleMs = L.cfg.timing.idle_nudge_seconds * 1000;
 

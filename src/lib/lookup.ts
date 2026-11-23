@@ -117,7 +117,7 @@ export async function lookupUser(L: Loaded, store: Store, uid: string, env: Look
   const day = listDay(L, current.retrievedAt); // the list's day, the same tag the saved list uses
   const { users } = rowsToUsers(L.cfg, src, mine, { secret: env.secret, day });
   const user = users[0]?.user;
-  if (!user) return null; // e.g. no valid date of birth
+  if (!user) return null; // e.g. holdout, or the chart genuinely failed to compute
   user.token = linkToken(env.secret, uid, day); // the same token the daily sync would make, so both paths agree
   await store.upsertUsers([user]);
   return user.token;

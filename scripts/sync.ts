@@ -52,7 +52,7 @@ async function main() {
     `sync ${day} · query ${src.redash_query_id} · ${cfg.experiment.prompt_version}${dryRun ? " · DRY RUN (nothing saved)" : ""}`,
     `rows ${report.rows} · synced ${report.synced} · holdout ${report.holdout} · skipped ${report.skipped.length}`,
     `kundli: ${report.charts.lagna} lagna charts · ${report.charts.moon} moon charts · without a birth time: ${report.charts.rashiUncertain} rashi not certain (no card, not stated), ${report.charts.dashaUncertain} dasha not certain (not stated)`,
-    `several kundli profiles: ${report.severalProfiles} users (the most complete one used) · no name: ${report.noName} ("Namaste ji")`,
+    `several kundli profiles: ${report.severalProfiles} users (the most complete one used) · no name: ${report.noName} ("Namaste ji") · no dob yet: ${report.noDob} (asked in-chat)`,
     `birth place: ${report.places.city} city · ${report.places.state} state only · ${report.places.latlon} lat/lon · ${report.places.none} not found`,
     `journeys: ${Object.entries(report.journeys).map(([j, n]) => `${j} ${n}`).join(" · ")}`,
     ...(missing.length ? [`⚠ the query has no column for: ${missing.map((k) => `${k} ("${src.columns[k]}")`).join(", ")}${missing.includes("name") ? " (the chat greets without a name)" : ""}`] : []),

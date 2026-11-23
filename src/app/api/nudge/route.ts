@@ -4,7 +4,7 @@ import { readJson, noStore } from "../_body";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// { token } → Omkar carries on after the user has been quiet (the server checks the silence itself)
+// { token } → Sitara carries on after the user has been quiet (the server checks the silence itself)
 export async function POST(req: Request) {
   const body = await readJson(req);
   const result = await nudge(String(body.token ?? ""));

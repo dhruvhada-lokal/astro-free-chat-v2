@@ -49,14 +49,18 @@ test("unknown time or an unmatched place → Moon chart, never a guessed lagna",
   assert.equal(report.charts.moon, 3);
 });
 
-test("holdout, bad rows and unmapped journeys are reported, not synced", () => {
+test("holdout and unmapped journeys are reported, not synced; a bad dob is synced anyway, chart-less (v3)", () => {
   const { users, report } = rowsToUsers(L.cfg, src, [
     row({ user_id: "1", holdout: 1 }), row({ user_id: "2", dob: "31-02-1990" }), row({ user_id: "3", name: "" }),
     row({ user_id: "4", cohort: "new_journey" }), row({ user_id: "4", cohort: "new_journey" }), row({ user_id: "5", cohort: "zero_bal", wallet_balance: "0" }),
     row({ user_id: "6", dob: "1990-01-01" }), row({ user_id: "6", dob: "2015-06-01" }),
   ], opts);
   assert.equal(report.holdout, 1);
-  assert.deepEqual(report.skipped.map((s) => s.why), ['date of birth "31-02-1990" is not a date']);
+  assert.deepEqual(report.skipped, [], "a bad/missing dob is no longer a skip reason");
+  assert.equal(report.noDob, 1);
+  const noDobUser = users.find((u) => u.user_id === "2")!.user;
+  assert.deepEqual([noDobUser.dob, noDobUser.moon_sign, noDobUser.lagna, noDobUser.planets], ["", "", null, null]);
+  assert.equal(noDobUser.moon_certain, undefined, "not applicable without a dob yet, not false");
   assert.equal(report.noName, 1, "no name is not a reason to skip");
   assert.equal(report.severalProfiles, 1);
   assert.equal(users.filter((u) => u.user_id === "6").length, 1, "several profiles → the most complete one is used");
@@ -64,6 +68,27 @@ test("holdout, bad rows and unmapped journeys are reported, not synced", () => {
   assert.deepEqual(report.unmappedJourneys, ["new_journey"]);
   assert.equal(users.find((u) => u.journey === "new_journey")!.user.cohort, L.cfg.default_cohort);
   assert.equal(users.find((u) => u.journey === "zero_bal")!.user.cohort, "rc2");
+});
+
+test("chat_language from the query (language_map) skips the in-chat picker; unmapped/missing leaves it unset", () => {
+  const srcWithLang: SourceConfig = {
+    ...src,
+    columns: { ...src.columns, chat_language: "chat_language" },
+    language_map: { Hindi: "hinglish", Tamil: "ta", Telugu: "te", Malayalam: "ml" },
+  };
+  const { users } = rowsToUsers(L.cfg, srcWithLang, [
+    row({ user_id: "1", chat_language: "Hindi" }),
+    row({ user_id: "2", chat_language: "tamil" }), // case-insensitive
+    row({ user_id: "3", chat_language: "Klingon" }), // unmapped → unset, picker shows
+    row({ user_id: "4", chat_language: "" }), // blank → unset
+    row({ user_id: "5" }), // column missing from this row entirely → unset
+  ], opts);
+  const lang = (id: string) => users.find((u) => u.user_id === id)!.user.chat_language;
+  assert.equal(lang("1"), "hinglish");
+  assert.equal(lang("2"), "ta");
+  assert.equal(lang("3"), null);
+  assert.equal(lang("4"), null);
+  assert.equal(lang("5"), null);
 });
 
 test("dates, times and places in the formats databases use", () => {

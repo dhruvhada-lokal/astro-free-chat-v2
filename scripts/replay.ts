@@ -1,5 +1,5 @@
 // npm run replay -- "msg 1" - "msg 2" … → plays a whole chat through the live prompt with real Gemini (first sample user),
-// so a prompt change can be judged on a full conversation. "-" = the user stays quiet (Omkar carries on). Nothing is stored.
+// so a prompt change can be judged on a full conversation. "-" = the user stays quiet (Sitara carries on). Nothing is stored.
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import {

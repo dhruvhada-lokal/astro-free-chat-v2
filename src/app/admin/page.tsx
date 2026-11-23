@@ -77,7 +77,7 @@ export default async function Admin({ searchParams }: { searchParams: Promise<Pa
             head={["", ""]}
             rows={[
               ["Messages per chat (user)", r.health.avgMessages ?? "–"],
-              ["Omkar spoke up on silence", pct1(r.health.silenceShare)],
+              ["Sitara spoke up on silence", pct1(r.health.silenceShare)],
               ["Left via back arrow", r.health.backArrow],
               ["Fallback replies", pct1(r.health.fallbackShare)],
               ["Reply time (model)", r.health.avgReplySec === null ? "–" : `${r.health.avgReplySec} s`],

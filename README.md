@@ -1,6 +1,6 @@
 # Astrolokal AI free chat
 
-A lapsed user taps a WhatsApp link → a 2-minute free chat with Astro Omkar (their own kundli) → "Talk to astrologer" opens the app.
+A lapsed user taps a WhatsApp link → a 2-minute free chat with Astro Sitara (their own kundli) → "Talk to astrologer" opens the app.
 
 ## Flow
 
@@ -13,7 +13,7 @@ A stored result from before 8:30 AM IST (journeys run 8:00–8:30) is re-run (~3
 
 ## Change the experience
 
-Edit `config/config.yaml` (text, timing, offer, button link) or `config/prompt_template.md` (how Omkar talks).
+Edit `config/config.yaml` (text, timing, offer, button link) or `config/prompt_template.md` (how Sitara talks).
 Bump `prompt_version` on every change so `/admin` shows results per version.
 
 ## Commands

@@ -29,7 +29,7 @@ test("unknown or malformed link → invalid screen", async () => {
   assert.equal((await chat.startOrResume("../../etc")).status, "invalid");
 });
 
-test("first open: details → Omkar joins → 2-line greeting (known topic: \"kaise hai aap\"); no kundli, no topic question yet; reopening resumes", async () => {
+test("first open: Sitara joins → 2-line greeting (known topic: \"kaise hai aap\"); no kundli, no topic question yet; reopening resumes", async () => {
   const v = await chat.startOrResume("u_open_001");
   assert.equal(v.status, "active");
   assert.deepEqual(v.messages.map((m) => m.role), ["details", "system", "system", "ai", "ai"]);
@@ -38,9 +38,9 @@ test("first open: details → Omkar joins → 2-line greeting (known topic: \"ka
   assert.equal(v.topicAsked, false, "the topic question itself is asked later (timing.topic_wait_seconds), not bundled in here");
   assert.ok(v.secondsLeft > 115 && v.secondsLeft <= 120);
   assert.equal(v.chart?.moonSign, samples[0].moon_sign);
-  assert.equal(v.persona.name, "Astro Omkar");
+  assert.equal(v.persona.name, "Astro Sitara");
   assert.equal(typeof v.pacing.typing_min_ms, "number", "pacing reaches the page");
-  assert.equal(v.persona.avatar, "/persona/omkar.jpg");
+  assert.equal(v.persona.avatar, "/persona/sitara.jpg");
   assert.equal(v.chart?.kundli?.basis, "lagna");
   assert.deepEqual(v.chart?.kundli?.houses[0].items, ["Asc", "Ma 19.0°"]);
   assert.equal(v.ui.cta_label, "Talk to astrologer");
@@ -60,7 +60,7 @@ test("first answer = intro + kundli + chart line + reply bubble(s); later answer
   // an exact count (a 1-bubble mock pick is entirely consumed as the empathy opener, with nothing left after).
   assert.deepEqual(r.messages.slice(0, 4).map((m) => m.role), ["ai", "ai", "kundli", "ai"], "empathy, intro, kundli card, chart line");
   assert.ok(r.messages.length >= 4 && r.messages.slice(4).every((m) => m.role === "ai"), "then the rest of the finding, if any");
-  assert.equal(r.messages[1].text, "Aapki kundli dekh raha hoon…");
+  assert.equal(r.messages[1].text, "Aapki kundli dekh rahi hoon…");
   assert.match(r.messages[3].text, /ka samay chal raha hai\.$/);
   const second = await chat.sendMessage("u_send_001", "love ya arrange?");
   assert.ok(second.ok);
@@ -229,7 +229,7 @@ async function quietFor(token: string, ms: number, clockMs = ms) {
   });
 }
 
-test("quiet user: Omkar starts the reading himself, never faster than the idle time", async () => {
+test("quiet user: Sitara starts the reading herself, never faster than the idle time", async () => {
   await getStore().upsertUsers([user("u_quiet_01")]);
   await chat.startOrResume("u_quiet_01");
   const early = await chat.nudge("u_quiet_01");
@@ -310,4 +310,48 @@ test("the user_id never reaches the browser", async () => {
   await getStore().upsertUsers([{ ...user("u_uid_001"), user_id: "424242" }]);
   const v = await chat.startOrResume("u_uid_001");
   assert.ok(!JSON.stringify(v).includes("424242"));
+});
+
+test("v3: a real user_id with no dob yet is asked for it, not dead-ended; language first if that's unset too", async () => {
+  await getStore().upsertUsers([{ ...user("u_dob_001"), dob: "", moon_sign: "", mahadasha: "", antardasha: "" }]);
+  const v = await chat.startOrResume("u_dob_001");
+  assert.equal(v.status, "needs_dob", "chat_language is already set on this fixture, so dob is the only thing missing");
+  assert.equal(v.clockStarted, false);
+  assert.deepEqual(v.messages, []);
+  assert.equal(await getStore().getSession("u_dob_001"), null, "no session is created just by showing the form");
+
+  const bad = await chat.submitDob("u_dob_001", { dob: "not-a-date" });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.view.status, "needs_dob", "stays on the same screen to try again");
+  assert.equal((await getStore().getUser("u_dob_001"))?.dob, "", "nothing saved on a bad submission");
+
+  const good = await chat.submitDob("u_dob_001", { name: "Test Name", dob: "1995-05-20" });
+  assert.equal(good.ok, true);
+  assert.equal(good.view.status, "active", "straight into the normal chat once dob is filled in");
+  const saved = await getStore().getUser("u_dob_001");
+  assert.equal(saved?.dob, "1995-05-20");
+  assert.equal(saved?.user_id, user("u_dob_001").user_id, "same account, not a new disconnected one");
+  assert.notEqual(saved?.cohort, "self_serve", "their real cohort, never self_serve");
+});
+
+test("v3: both language and dob missing → language screen, then dob screen, then the normal chat", async () => {
+  await getStore().upsertUsers([{ ...user("u_both_001"), dob: "", chat_language: null }]);
+  const first = await chat.startOrResume("u_both_001");
+  assert.equal(first.status, "choose_language");
+
+  const afterLang = await chat.chooseLanguage("u_both_001", "ta");
+  assert.equal(afterLang.status, "needs_dob", "language is saved; dob is still missing");
+  assert.equal((await getStore().getUser("u_both_001"))?.chat_language, "ta");
+
+  const afterDob = await chat.submitDob("u_both_001", { dob: "1990-01-01" });
+  assert.equal(afterDob.ok, true);
+  assert.equal(afterDob.view.status, "active");
+});
+
+test("submitDob on an account that already has a dob just resumes the chat, nothing overwritten", async () => {
+  await getStore().upsertUsers([user("u_dob_002")]); // the sample fixture already has a real dob
+  const before = await getStore().getUser("u_dob_002");
+  const r = await chat.submitDob("u_dob_002", { dob: "1990-01-01" });
+  assert.equal(r.ok, true);
+  assert.equal((await getStore().getUser("u_dob_002"))?.dob, before?.dob, "the existing dob is untouched");
 });

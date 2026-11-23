@@ -4,7 +4,7 @@ import { readJson, noStore } from "../_body";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// { token, text } → Omkar's reply
+// { token, text } → Sitara's reply
 export async function POST(req: Request) {
   const body = await readJson(req);
   const result = await sendMessage(String(body.token ?? ""), String(body.text ?? ""));

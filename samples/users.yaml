@@ -1,5 +1,6 @@
 # Fake users for previews and tests. Real users come from the lapsed-payer list (never commit real data).
 - token: t_demo_shaadi_01
+  user_id: "1000001"
   name: Rohan Mehta
   gender: male
   dob: "2002-11-05"
@@ -18,6 +19,7 @@
   windows: { shaadi: "2027 ki pehli chhamahi" }
   planets: { Su: "Tula 18.4", Mo: "Tula 19.0", Ma: "Kanya 19.0", Me: "Tula 12.7", Ju: "Kark 22.8", Ve: "Tula 11.4", Sa: "Mithun 4.7", Ra: "Vrishabh 16.2", Ke: "Vrishchik 16.2" }
 - token: t_demo_notob_02
+  user_id: "1000002"
   name: sunita devi
   gender: female
   dob: "1979-11-02"
@@ -32,6 +34,7 @@
   last_consult_date: "2026-07-01"
   consult_count: 7
 - token: t_demo_naukri_03
+  user_id: "1000003"
   name: Arjun Kumar
   gender: male
   dob: "1996-02-29"
@@ -47,6 +50,7 @@
   last_consult_date: "2026-09-01"
   consult_count: 1
 - token: t_demo_picklang_04
+  user_id: "1000004"
   name: Priya Nair
   gender: female
   dob: "1998-06-15"

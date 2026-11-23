@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import s from "./chat.module.css";
 import Confetti from "./Confetti";
 import { KundliCard } from "./Kundli";
@@ -9,7 +8,7 @@ import type { KundliView } from "./Kundli";
 
 type Msg = { role: "user" | "ai" | "kundli" | "details" | "system"; text: string; at?: string };
 type View = {
-  status: "invalid" | "active" | "ended" | "choose_language";
+  status: "invalid" | "active" | "ended" | "choose_language" | "needs_dob";
   languageOptions: { key: string; label: string }[];
   languagePrompt: string;
   brandName: string;
@@ -63,7 +62,7 @@ const DEFAULT_PACING: View["pacing"] = {
 // still reads as a deliberate, considered reply rather than an unnaturally fast one for how much it says.
 const wordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 const TICK_MS = 100;       // timer resolution (drives the smooth bars)
-const HANDOFF_TYPING_MS = 1800; // Omkar "types" for a beat right as the clock runs out, before the hand-off card appears
+const HANDOFF_TYPING_MS = 1800; // Sitara "types" for a beat right as the clock runs out, before the hand-off card appears
 
 // "typing…" lasts longer for longer messages, like a person typing, within min..max.
 const typingMs = (p: View["pacing"], text: string) =>
@@ -105,7 +104,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const buzz = () => { try { navigator.vibrate?.(12); } catch { /* not supported */ } };
 
 export default function Chat({ token }: { token: string }) {
-  const router = useRouter();
   const [view, setView] = useState<View | null>(null);
   const [shown, setShown] = useState<Msg[]>([]);
   const [typing, setTyping] = useState(false);
@@ -119,7 +117,7 @@ export default function Chat({ token }: { token: string }) {
   const [now, setNow] = useState(0);
   const [pickingLang, setPickingLang] = useState(false);
   // When the opening greeting finished revealing (or a resumed chat loaded) — the reference point for the
-  // post-greeting wait, before Omkar proactively asks the topic question. State, not a ref: it's set inside an
+  // post-greeting wait, before Sitara proactively asks the topic question. State, not a ref: it's set inside an
   // async .then(), and the watcher effect below needs to re-run once that actually lands.
   const [topicWaitStart, setTopicWaitStart] = useState<number | null>(null);
 
@@ -136,7 +134,7 @@ export default function Chat({ token }: { token: string }) {
   const revealing = useRef(0);     // messages still being revealed
   const nudging = useRef(false);
   const closingAsked = useRef(false);
-  const lastActivity = useRef(0); // last message shown or key pressed (set when the chat opens): Omkar speaks up after a quiet spell
+  const lastActivity = useRef(0); // last message shown or key pressed (set when the chat opens): Sitara speaks up after a quiet spell
   const draftRef = useRef("");
 
   const sync = useCallback((v: View) => {
@@ -150,7 +148,7 @@ export default function Chat({ token }: { token: string }) {
   // Messages are revealed through one queue, so a reply never interleaves with another.
   // firstAlreadyTyped: the typing dots were already showing while we waited for the server.
   // typedSince: when those dots appeared; the first message still gets its full typing time (a fast model
-  // reply shouldn't make Omkar answer instantly).
+  // reply shouldn't make Sitara answer instantly).
   const reveal = useCallback((msgs: Msg[], typedSince?: number, ladderTurn?: number, chartLineIndex?: number | null) => {
     revealing.current += 1;
     queue.current = queue.current.then(async () => {
@@ -175,7 +173,7 @@ export default function Chat({ token }: { token: string }) {
         setTyping(false);
         setShown((prev) => [...prev, m]);
         // The kundli card itself gets its own silent gap before "typing…" starts (pacing.kundli_gap_ms) — a
-        // deliberate pause, as if Omkar is genuinely checking the chart. Right before the chart line — whether
+        // deliberate pause, as if Sitara is genuinely checking the chart. Right before the chart line — whether
         // that's right after the card, or (no card: no birth time) right after the intro line — there's a longer
         // pause still (dramatic_gap_ms). engage_bridge's own two bubbles (the bridge, then the one real question)
         // get that same longer pause between them, for the same reason — the question is the one moment in this
@@ -214,6 +212,23 @@ export default function Chat({ token }: { token: string }) {
     }
   }, [token, sync, reveal, pickingLang]);
 
+  // The needs_dob screen's submit: saves it onto their own real account, then opens the chat exactly like the
+  // language picker's tap would (same shape of result: a fresh View, sometimes already "active").
+  const submitDob = useCallback(async (name: string, dob: string) => {
+    const r = await post<{ ok: boolean; view: View }>("/api/onboard", { token, name, dob });
+    if (r.ok) {
+      sync(r.view);
+      lastActivity.current = Date.now();
+      if (r.view.status === "active" || r.view.status === "ended") {
+        beacon(token, r.view.status === "active" ? "link_opened" : "ended_screen_viewed", { seconds_left: r.view.secondsLeft });
+        if (r.view.justStarted) await reveal(r.view.messages);
+        else setShown(r.view.messages);
+        setTopicWaitStart(Date.now());
+      }
+    }
+    return r.ok;
+  }, [token, sync, reveal]);
+
   // Open or resume the chat.
   useEffect(() => {
     let cancelled = false;
@@ -223,7 +238,7 @@ export default function Chat({ token }: { token: string }) {
         if (cancelled) return;
         sync(v);
         lastActivity.current = Date.now();
-        if (v.status === "invalid" || v.status === "choose_language") return; // nothing has started yet: no messages, no beacon
+        if (v.status === "invalid" || v.status === "choose_language" || v.status === "needs_dob") return; // nothing has started yet: no messages, no beacon
         beacon(token, v.status === "active" ? "link_opened" : "ended_screen_viewed", { seconds_left: v.secondsLeft });
         if (v.justStarted) void reveal(v.messages).then(() => setTopicWaitStart(Date.now())); // the opening animates once, never on a reload
         else {
@@ -265,7 +280,7 @@ export default function Chat({ token }: { token: string }) {
   const showSheet = active && !crisis && !!view?.clockStarted && (left <= view.handoffAt || view.closed);
   const urgent = active && !!view?.clockStarted && !timeUp && left <= view.closingAt;
 
-  // Omkar "types" for a beat the moment the clock runs out, like he's sending one more message — then the
+  // Sitara "types" for a beat the moment the clock runs out, like she's sending one more message — then the
   // hand-off card appears instead (see .sheet's translucent styling: it reads as that message, unreadable).
   useEffect(() => {
     if (!showSheet || cardLogged.current) return;
@@ -333,7 +348,7 @@ export default function Chat({ token }: { token: string }) {
     return () => { document.removeEventListener("visibilitychange", onHide); window.removeEventListener("pagehide", onHide); };
   }, [liveChat, token]);
 
-  // When the user goes quiet, Omkar carries on by himself; at closing time he sends the closing line.
+  // When the user goes quiet, Sitara carries on by herself; at closing time she sends the closing line.
   // The server re-checks the silence, so this timer can't make him talk more than configured.
   const quietWatch = active && !crisis && !!view?.clockStarted && !view.closed;
   useEffect(() => {
@@ -365,7 +380,7 @@ export default function Chat({ token }: { token: string }) {
     return () => clearInterval(id);
   }, [quietWatch, view, token, sync, reveal]);
 
-  // The pause right after the opening greeting: if they haven't said anything by topicWaitSeconds, Omkar
+  // The pause right after the opening greeting: if they haven't said anything by topicWaitSeconds, Sitara
   // proactively asks his topic question (their own, if known, else the generic one) — scripted, server-decided.
   // Stops for good the moment they say anything at all (view.topicAsked, or chartShown via that same flag, or a
   // user message already in `shown`) — typing without sending doesn't extend or shorten the wait any more.
@@ -455,7 +470,7 @@ export default function Chat({ token }: { token: string }) {
   if (!view) return <Shell><Skeleton /></Shell>;
 
   if (view.status === "choose_language") {
-    // A known user (real details already on file) whose language just isn't known yet — Omkar greets them the
+    // A known user (real details already on file) whose language just isn't known yet — Sitara greets them the
     // same way as a brand-new user, but only ever asks for the language: picking one starts the chat immediately
     // with their existing name/kundli, on this same link, no name/DOB form needed.
     return (
@@ -500,9 +515,9 @@ export default function Chat({ token }: { token: string }) {
     );
   }
 
-  if (view.status === "invalid") {
-    // Omkar's own first message, before he knows anything about this person: a greeting, then he asks for
-    // language + details himself — the form is the reply to his own message, not a separate page or dialog.
+  if (view.status === "needs_dob") {
+    // v3: a real user_id with no date of birth on file yet — their language is already known by this point
+    // (choose_language runs first), so this only ever asks for name + dob, right in the chat.
     return (
       <Shell>
         <header className={s.header}>
@@ -522,12 +537,45 @@ export default function Chat({ token }: { token: string }) {
           <div className={s.dayChip}>Today</div>
           <div className={s.systemNote}>Connecting you to {view.persona.name}…</div>
           <div className={s.systemNote}>{view.persona.name} has joined</div>
-          <Onboard
-            onDone={(tok) => router.push(`/c/${tok}`)}
-            persona={view.persona}
-            languageOptions={view.languageOptions} languagePrompt={view.languagePrompt}
-            onboardingLabels={view.onboardingLabels}
-          />
+          <DetailsForm onSubmit={submitDob} persona={view.persona} labels={view.ui} />
+        </div>
+      </Shell>
+    );
+  }
+
+  if (view.status === "invalid") {
+    // v3: self-serve onboarding is gone — only a real targeted link (a real user_id behind it) gets in.
+    // Anyone else (unknown token, or a token with no user_id) sees this dead end, not a way to make their own account.
+    return (
+      <Shell>
+        <header className={s.header}>
+          <div className={s.avatarWrap}>
+            <Avatar persona={view.persona} className={s.avatar} />
+          </div>
+          <div className={s.who}>
+            <div className={s.name}>
+              {view.persona.name}
+              {view.persona.verified ? <VerifiedIcon /> : null}
+            </div>
+          </div>
+        </header>
+        <div className={s.list}>
+          <section className={s.sheet}>
+            <div className={s.sheetHead}>
+              <div>
+                <p className={s.sheetText}>{view.ui.invalid_title}</p>
+                <span className={s.offer}>{view.ui.invalid_text}</span>
+              </div>
+            </div>
+            <a
+              className={`${s.cta} ${s.ctaDone}`}
+              href={view.handoffUrl}
+              onClick={(e) => openApp(e, view.handoffUrl, view.fallbackUrl)}
+            >
+              <span className={s.ctaLabel}>{view.ui.cta_label}</span>
+              <ArrowIcon />
+            </a>
+          </section>
         </div>
       </Shell>
     );
@@ -898,21 +946,19 @@ const DEFAULT_ONBOARD_LABELS = {
   error_failed: "Something didn't work. Please check your details and try again.",
 };
 
-// Phase 5: self-serve onboarding, for a /u/<user_id> Redash never sent us. Two sequential steps, both as real
-// Omkar chat bubbles, not a page or dialog: (1) a greeting, then he asks which language — the reply is just the
-// language roller; (2) once picked, a second message (now in that language) asks for the details, with the
-// name/DOB card appearing below it. Builds a real chart from what they type: just name and DOB — gender, time
-// of birth and place of birth don't change anything astrologically meaningful enough to ask for here (no lagna
-// is possible without a time of birth either way; see chart.ts).
-function Onboard({
-  onDone, persona, languageOptions, languagePrompt, onboardingLabels,
+// v3's needs_dob screen: a real user_id with no date of birth on file yet, asked for directly in the chat, as
+// real Sitara bubbles — not a page or dialog. Language is already known by this point (choose_language runs
+// first), so this only ever asks for name + dob — gender, time of birth and place of birth don't change
+// anything astrologically meaningful enough to ask for here (no lagna is possible without a time of birth
+// either way; see chart.ts). Builds a real chart from what they type, saved onto their own existing account.
+function DetailsForm({
+  onSubmit, persona, labels: labelOverrides,
 }: {
-  onDone: (token: string) => void; persona: { name: string; label: string; avatar: string; verified: boolean };
-  languageOptions: { key: string; label: string }[]; languagePrompt: string;
-  onboardingLabels: Record<string, Partial<typeof DEFAULT_ONBOARD_LABELS>>;
+  onSubmit: (name: string, dob: string) => Promise<boolean>;
+  persona: { name: string; label: string; avatar: string; verified: boolean };
+  labels: Partial<typeof DEFAULT_ONBOARD_LABELS>;
 }) {
-  const [language, setLanguage] = useState("");
-  const labels = { ...DEFAULT_ONBOARD_LABELS, ...(language ? onboardingLabels[language] ?? {} : {}) };
+  const labels = { ...DEFAULT_ONBOARD_LABELS, ...labelOverrides };
   const [name, setName] = useState("");
   const [day, setDay] = useState("");
   const [month, setMonth] = useState("");
@@ -943,11 +989,8 @@ function Onboard({
     setBusy(true);
     setError("");
     try {
-      const r = await post<{ ok: boolean; token?: string }>("/api/onboard", {
-        name: name.trim(), dob, language,
-      });
-      if (r.ok && r.token) onDone(r.token);
-      else setError(labels.error_failed);
+      const ok = await onSubmit(name.trim(), dob);
+      if (!ok) setError(labels.error_failed);
     } catch {
       setError(labels.error_failed);
     } finally {
@@ -959,56 +1002,31 @@ function Onboard({
     <>
       <div className={s.aiRow}>
         <Avatar persona={persona} className={s.miniAvatar} />
-        <div className={`${s.bubble} ${s.ai} ${s.tailAi}`}>Namaste 🙏</div>
+        <div className={`${s.bubble} ${s.ai} ${s.tailAi}`}>{labels.title}</div>
       </div>
-      <div className={s.aiRow}>
-        <Avatar persona={persona} className={s.miniAvatar} />
-        <div className={`${s.bubble} ${s.ai} ${s.tailAi}`}>{languagePrompt}</div>
-      </div>
-      {language ? (
-        <div className={`${s.bubble} ${s.user} ${s.tailUser}`}>
-          {languageOptions.find((o) => o.key === language)?.label ?? language}
-        </div>
-      ) : (
-        <div className={s.onboardLangTabs}>
-          {languageOptions.map((opt) => (
-            <button key={opt.key} type="button" className={s.onboardLangTab} onClick={() => setLanguage(opt.key)}>
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {language ? (
-        <>
-          <div className={s.aiRow}>
-            <Avatar persona={persona} className={s.miniAvatar} />
-            <div className={`${s.bubble} ${s.ai} ${s.tailAi}`}>{labels.title}</div>
-          </div>
-          <form className={s.onboard} onSubmit={(e) => void submit(e)}>
-            {error ? <p className={s.sendError} role="alert">{error}</p> : null}
-            <label className={s.onboardLabel}>
-              <span>{labels.name_label} <span className={s.onboardOptional}>(optional)</span></span>
-              <input
-                className={s.onboardInput} value={name} onChange={(e) => setName(e.target.value)}
-                maxLength={80} autoComplete="name" autoCapitalize="words"
-              />
-            </label>
-            <label className={s.onboardLabel}>
-              {labels.dob_label}
-              <DobField
-                day={day} month={month} year={year} days={days} years={years}
-                onDay={setDay}
-                onMonth={(v) => { setMonth(v); setDay((d) => clampDay(d, v, year)); }}
-                onYear={(v) => { setYear(v); setDay((d) => clampDay(d, month, v)); }}
-              />
-            </label>
-            <button type="submit" className={`${s.cta} ${s.ctaDone}`} disabled={busy}>
-              <span className={s.ctaLabel}>{busy ? labels.submit_busy : labels.submit_label}</span>
-              {busy ? null : <ArrowIcon />}
-            </button>
-          </form>
-        </>
-      ) : null}
+      <form className={s.onboard} onSubmit={(e) => void submit(e)}>
+        {error ? <p className={s.sendError} role="alert">{error}</p> : null}
+        <label className={s.onboardLabel}>
+          <span>{labels.name_label} <span className={s.onboardOptional}>(optional)</span></span>
+          <input
+            className={s.onboardInput} value={name} onChange={(e) => setName(e.target.value)}
+            maxLength={80} autoComplete="name" autoCapitalize="words"
+          />
+        </label>
+        <label className={s.onboardLabel}>
+          {labels.dob_label}
+          <DobField
+            day={day} month={month} year={year} days={days} years={years}
+            onDay={setDay}
+            onMonth={(v) => { setMonth(v); setDay((d) => clampDay(d, v, year)); }}
+            onYear={(v) => { setYear(v); setDay((d) => clampDay(d, month, v)); }}
+          />
+        </label>
+        <button type="submit" className={`${s.cta} ${s.ctaDone}`} disabled={busy}>
+          <span className={s.ctaLabel}>{busy ? labels.submit_busy : labels.submit_label}</span>
+          {busy ? null : <ArrowIcon />}
+        </button>
+      </form>
     </>
   );
 }
