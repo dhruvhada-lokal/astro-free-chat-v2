@@ -593,13 +593,9 @@ export default function Chat({ token }: { token: string }) {
           </div>
         </header>
         <div className={s.list}>
-          <section className={s.sheet}>
-            <div className={s.sheetHead}>
-              <div>
-                <p className={s.sheetText}>{view.ui.invalid_title}</p>
-                <span className={s.offer}>{view.ui.invalid_text}</span>
-              </div>
-            </div>
+          <div className={s.empty}>
+            <p className={s.emptyTitle}>{view.ui.invalid_title}</p>
+            <p className={s.emptyText}>{view.ui.invalid_text}</p>
             <a
               className={`${s.cta} ${s.ctaDone}`}
               href={view.handoffUrl}
@@ -608,7 +604,7 @@ export default function Chat({ token }: { token: string }) {
               <span className={s.ctaLabel}>{view.ui.cta_label}</span>
               <ArrowIcon />
             </a>
-          </section>
+          </div>
         </div>
       </Shell>
     );
