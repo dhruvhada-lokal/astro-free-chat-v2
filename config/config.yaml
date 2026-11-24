@@ -23,10 +23,10 @@ experiment:
 timing:
   free_seconds: 120                 # length of the free chat
   clock_starts: open                # open = when the chat page opens (AT-style urgency) · first_message = at the first question
-  pull_until_seconds_left: 20       # from here, Sitara leaves them on one open thread (the hook) instead of new insights
+  pull_until_seconds_left: 10       # from here, Sitara leaves them on one open thread (the hook) instead of new insights — a 5s window before closing_at_seconds_left
   idle_nudge_seconds: 25            # user quiet this long → Sitara carries on by herself, until the chat ends. 0 = off
-  closing_at_seconds_left: 15       # at 15 s left Sitara sends the closing line (or answers a last message with it)
-  handoff_card_at_seconds_left: 10  # app shows the hand-off card
+  closing_at_seconds_left: 5        # at 5 s left Sitara sends the closing line (or answers a last message with it)
+  handoff_card_at_seconds_left: 0   # app shows the hand-off card only once the chat has actually ended
   cta_countdown_seconds: 5          # the button counts down this long when the card appears, then stays (nothing opens by itself). 0 = no countdown
   llm_timeout_ms: 18000              # slower than this → send fallback_reply instead. Real gemini-3.5-flash-lite
                                       # latency here has typically run 10-17s; 18000 covers most of it. Time spent
@@ -203,7 +203,7 @@ reply_instructions:
     nothing after it, no "…", no punctuation, the sentence is simply left unfinished (e.g. "Kuch achha dikh raha
     hai magar"). This "agar"/"magar" bubble is the only case where a sentence may stay incomplete. Different from
     both the question and the "ke peeche ek wajah hai…" cliffhanger before it — never reuse their wording.
-  # the last ~20 seconds (timing.pull_until_seconds_left): leave them wanting the full reading
+  # the last few seconds (timing.pull_until_seconds_left): leave them wanting the full reading
   hook: >-
     The chat is about to end. Leave them on ONE open thread about what they asked in THIS chat (their words, e.g. their
     gf coming back, not "shaadi" from their profile), never a different topic. Name the specific piece of their answer you can see but haven't told yet (the exact timing, what is
@@ -291,12 +291,30 @@ monthly_line: ""
 
 # Everyday words users type → topic. Used when the user names a topic mid-chat.
 topics:
-  shaadi: [shaadi, shadi, marriage, vivah, rishta, wife, husband, biwi, pati, patni]
-  naukri: [naukri, job, career, kaam, business, vyapar, promotion, interview]
-  paisa: [paisa, paise, money, dhan, loan, karz, income]
-  parivaar: [parivaar, family, ghar, maa, papa, bachche, baccha, bacche, bachcha, bacha, santaan]
-  pyaar: [pyaar, pyar, love, girlfriend, boyfriend, breakup, crush]
-  sehat: [health, sehat, bimari, beemari, hospital, operation, dawai]
+  shaadi: [
+    shaadi, shadi, vivah, vivaah, marriage, rishta, wife, husband, biwi, pati, patni, engagement, mangni, sagai,
+    manglik, "kundli milan", "kundali match", groom, bride, dulha, dulhan, fiance, fiancee, sasural, divorce, talaq, talak, judai,
+  ]
+  naukri: [
+    naukri, nukri, job, career, kaam, business, vyapar, promotion, interview, "salary hike", resignation, resign, transfer,
+    posting, "sarkari naukri", "government job", "private job", startup, company, layoff, "nikal diya", exam, result, padhai, college, admission,
+  ]
+  paisa: [
+    paisa, paise, money, dhan, loan, karz, karza, udhaar, income, salary, kamai, kharcha, investment, invest,
+    property, zameen, jameen, plot, nuksan, profit, fayda, emi, bank, "share market",
+  ]
+  parivaar: [
+    # "beta", "beti", "bhai" and "behen" are deliberately left out — in everyday Hindi texting they're just as
+    # often a casual term of address ("bhai sahi hai", "thanks beta") as an actual mention of family, so they'd
+    # false-trigger the topic far more than they'd correctly catch it.
+    parivaar, family, ghar, maa, papa, mummy, daddy, bachche, baccha, bacche, bachcha, bacha, santaan,
+    dada, dadi, nana, nani, saas, susar, rishtedaar,
+  ]
+  pyaar: [pyaar, pyar, love, girlfriend, boyfriend, gf, bf, breakup, crush, affair, dating, dhoka, beiman, ex]
+  sehat: [
+    health, sehat, tabiyat, bimari, beemari, hospital, operation, surgery, dawai, dawa, medicine, doctor, ilaj,
+    dard, pregnancy, pregnant,
+  ]
 
 # Every AI reply is checked against these. A hit removes that bubble (and logs the reason);
 # if nothing is left, fallback_reply is sent instead.
@@ -426,6 +444,7 @@ languages:
       status_typing: "type pannitu irukkanga…"
       strip_cta: "Vaangunga"
       card_text: "{name}, unga kundli la mukkiyamana vishayam innum sollala 👀"
+      notif_text: "{name}, exact details therinjikka chat-ah continue pannunga 👀"
       card_offer: "Oru special offer ungalukkaga 👀"
       cta_label: "Astrologer kooda pesunga"
       cta_subtext: "Engal top astrologers kooda pesunga"
@@ -440,6 +459,12 @@ languages:
       paisa: "{name}, panam eppo epdi varum nu innum sollala 👀"
       pyaar: "{name}, unga kadhalukku real answer innum kedikela👀"
       parivaar: "{name}, kudumba prachanaikku theervu innum kaanala👀"
+    notif_text_by_topic:
+      shaadi: "{name}, unga kalyanam pathi exact details therinjikka chat-ah continue pannunga 👀"
+      naukri: "{name}, unga velai pathi exact details therinjikka chat-ah continue pannunga 👀"
+      paisa: "{name}, unga panam pathi exact details therinjikka chat-ah continue pannunga 👀"
+      pyaar: "{name}, unga kadhal pathi exact details therinjikka chat-ah continue pannunga 👀"
+      parivaar: "{name}, unga kudumbam pathi exact details therinjikka chat-ah continue pannunga 👀"
     guardrails:
       banned:
         - { reason: relative_time, pattern: '\b(adutha|rendu moonu) (varusham|matham|vaaram)\b' }
@@ -508,6 +533,7 @@ languages:
       status_typing: "type chestunnaru…"
       strip_cta: "Teesukondi"
       card_text: "{name} garu, mee kundli lo chala mukhyamaina vishayam inka cheppaledu 👀"
+      notif_text: "{name} garu, exact details telusukovadaniki chat continue cheyandi 👀"
       card_offer: "Meeku oka special offer 👀"
       cta_label: "Astrologer tho matladandi"
       cta_subtext: "Maa top astrologers tho matladandi"
@@ -522,6 +548,12 @@ languages:
       paisa: "{name} garu, dabbu eppudu ela vastundi ani inka cheppaledu 👀"
       pyaar: "{name} garu, mee prema ki nijamaina samadhanam inka cheppaledu 👀"
       parivaar: "{name} garu, kutumba samasyalaku parishkaram inka cheppaledu 👀"
+    notif_text_by_topic:
+      shaadi: "{name} garu, mee pelli gurinchi exact details telusukovadaniki chat continue cheyandi 👀"
+      naukri: "{name} garu, mee udyogam gurinchi exact details telusukovadaniki chat continue cheyandi 👀"
+      paisa: "{name} garu, mee dabbu gurinchi exact details telusukovadaniki chat continue cheyandi 👀"
+      pyaar: "{name} garu, mee prema gurinchi exact details telusukovadaniki chat continue cheyandi 👀"
+      parivaar: "{name} garu, mee kutumbam gurinchi exact details telusukovadaniki chat continue cheyandi 👀"
     guardrails:
       banned:
         - { reason: relative_time, pattern: '\b(vachche samvatsaram|rendu moodu nelallo|ee samvatsaram)\b' }
@@ -590,6 +622,7 @@ languages:
       status_typing: "type cheyyunnu…"
       strip_cta: "Vaangu"
       card_text: "{name}, ningalude kundli-ile ettavum pradhanappetta karyam innum paranjittilla 👀"
+      notif_text: "{name}, exact details ariyan chat continue cheyyu 👀"
       card_offer: "Oru special offer ningalkku 👀"
       cta_label: "Astrologer-umayi samsarikku"
       cta_subtext: "Njangalude top astrologers-umayi samsarikku"
@@ -604,6 +637,12 @@ languages:
       paisa: "{name}, panam eppo engane varumennu innum paranjittilla 👀"
       pyaar: "{name}, ningalude premathinte innayu kurachu parayandu"
       parivaar: "{name}, kudumba prashnathinu parihaaram innum paranjittilla 👀"
+    notif_text_by_topic:
+      shaadi: "{name}, ningalude kalyanam sambandhicha exact details ariyan chat continue cheyyu 👀"
+      naukri: "{name}, ningalude joli sambandhicha exact details ariyan chat continue cheyyu 👀"
+      paisa: "{name}, ningalude panam sambandhicha exact details ariyan chat continue cheyyu 👀"
+      pyaar: "{name}, ningalude pranayam sambandhicha exact details ariyan chat continue cheyyu 👀"
+      parivaar: "{name}, ningalude kudumbam sambandhicha exact details ariyan chat continue cheyyu 👀"
     guardrails:
       banned:
         - { reason: relative_time, pattern: '\b(aduttha varsham|randu moonu masam|ee masam)\b' }
@@ -734,6 +773,9 @@ ui:
   card_offer: "A special offer awaits you 👀"     # shown with 🎁 in front, under the hook
   cta_label: "Talk to astrologer"
   cta_subtext: "Talk to our top astrologers"   # under the CTA, with verified ticks
+  # top notification call-out (v3): a quieter nudge, 5s after the hand-off card appears — see notif_text_by_topic
+  # below for the per-topic version. Separate copy from card_text on purpose: they're shown together.
+  notif_text: "{name} ji, exact details jaanne ke liye apni chat jaari rakhiye 👀"
   # input
   input_placeholder: "Type your question…"
   send_error: "Message not sent. Please try again."
@@ -750,3 +792,10 @@ card_text_by_topic:
   paisa: "{name} ji, paisa kab aur kaise aayega, yeh abhi batana baaki hai 👀"
   pyaar: "{name} ji, aapke pyaar ka asli jawab abhi batana baaki hai 👀"
   parivaar: "{name} ji, parivaar ki uljhan ka hal abhi batana baaki hai 👀"
+
+notif_text_by_topic:
+  shaadi: "{name} ji, apni shaadi ke exact details jaanne ke liye chat jaari rakhiye 👀"
+  naukri: "{name} ji, apni naukri ke exact details jaanne ke liye chat jaari rakhiye 👀"
+  paisa: "{name} ji, apne paisa ke exact details jaanne ke liye chat jaari rakhiye 👀"
+  pyaar: "{name} ji, apne pyaar ke exact details jaanne ke liye chat jaari rakhiye 👀"
+  parivaar: "{name} ji, apne parivaar ke exact details jaanne ke liye chat jaari rakhiye 👀"

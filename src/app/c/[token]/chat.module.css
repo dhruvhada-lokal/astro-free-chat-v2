@@ -50,7 +50,7 @@
   box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--orange);
 }
 /* Photo avatars: every avatar circle clips its image (header, message rows, sheet). */
-.avatar, .miniAvatar, .sheetAvatar { overflow: hidden; }
+.avatar, .miniAvatar, .sheetAvatar, .topNotifAvatar { overflow: hidden; }
 .avatarImg { width: 100%; height: 100%; display: block; object-fit: cover; object-position: 50% 22%; }
 
 .onlineDot {
@@ -263,6 +263,67 @@
   color: #8a6a58; font-size: 12px; cursor: pointer;
 }
 
+/* ── Top notification call-out ─────────────────────────────
+   A quieter nudge than the hand-off sheet: slides down from the very top of the screen, over the header.
+   The "you've unlocked a special offer" claim (normally its own banner, .strip below) is folded into this
+   same card instead (see .topNotifClaimRow) whenever the notification is up, so nothing is left to overlap. ── */
+.topNotif {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  left: 10px; right: 10px;
+  z-index: 5;
+  display: flex; flex-direction: column;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(60, 30, 10, 0.22), 0 0 0 1px rgba(0, 0, 0, 0.05);
+  animation: topNotifIn 0.45s var(--spring) both;
+  overflow: hidden;
+}
+.topNotifRow {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  color: inherit; text-decoration: none; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.topNotifRow:active { background: #fbf8f6; }
+.topNotifAvatar {
+  width: 36px; height: 36px; flex: none; border-radius: 50%;
+  background: #ffbf6e; color: #5a2410;
+  display: grid; place-items: center; font-weight: 700; font-size: 15px;
+}
+.topNotifBody { min-width: 0; }
+.topNotifTitle { font-size: 11.5px; font-weight: 700; color: #8b7d72; }
+.topNotifText { font-size: 15px; font-weight: 600; color: #1f1a17; line-height: 1.45; }   /* same size as .bubble (the chat text) */
+
+/* The "you've unlocked a special offer" strip, folded into the notification instead of left as its own banner:
+   same card (background, size), directly below the row above — a divider instead of a gap between them. */
+.topNotifClaimRow {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  background: #ffebdd;   /* same as .ai — Sitara's own chat bubble colour */
+  font-size: 15px; font-weight: 600; color: #4a1e0c; line-height: 1.45;   /* same size as .bubble (the chat text) */
+}
+.topNotifClaimIcon { font-size: 16px; line-height: 1; display: inline-block; flex: none; }
+.topNotifClaimText { flex: 1; min-width: 0; }
+.topNotifClaimCta {
+  flex: none;
+  padding: 6px 14px; border-radius: 8px;
+  background: var(--orange); color: #fff;
+  font-size: 13px; font-weight: 700; text-decoration: none;
+  box-shadow: 0 2px 6px rgba(244, 87, 34, 0.3);
+}
+.topNotifClaimCta:active { transform: scale(0.96); }
+
+/* Local testing only: toggles to call out the top notification / bottom sheet without waiting for the real timer. */
+.devToolbar {
+  position: absolute; top: 72px; right: 8px; z-index: 20;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+}
+.devBtn {
+  padding: 6px 10px; border-radius: 8px;
+  border: 1px dashed #c9b8aa; background: rgba(255, 255, 255, 0.92);
+  color: #8a6a58; font-size: 11px; font-weight: 600; cursor: pointer;
+}
+
 /* ── Hand-off sheet ─────────────────────────────────────── */
 .sheet {
   flex: none;
@@ -438,6 +499,7 @@
 @keyframes bubbleIn { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes sheetUp { from { transform: translateY(105%); } to { transform: none; } }
 @keyframes stripIn { from { opacity: 0.4; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes topNotifIn { from { opacity: 0; transform: translateY(-120%); } to { opacity: 1; transform: none; } }
 @keyframes popBig { 0% { transform: scale(0.4); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 @keyframes dot { 0%, 70%, 100% { transform: translateY(0); opacity: 0.45; } 35% { transform: translateY(-4px); opacity: 1; } }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
@@ -450,7 +512,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bubble, .appear, .sheet, .strip, .stripIcon, .giftBadge, .typing i, .timerUrgent, .ctaDone::after, .sk, .ringNum, .ctaUrgent, .offer { animation: none !important; }
+  .bubble, .appear, .sheet, .strip, .stripIcon, .giftBadge, .typing i, .timerUrgent, .ctaDone::after, .sk, .ringNum, .ctaUrgent, .offer, .topNotif { animation: none !important; }
   .timeBar, .ringArc { transition: none; }
 }
 .user + .kundliCard { margin-top: 8px; }

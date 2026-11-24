@@ -7,7 +7,7 @@
 // until the closing line at closing_at_seconds_left. Nothing is ever sent after the chat has ended.
 
 import {
-  load, buildContext, newSession, openingBubbles, chartIntro, chartLine, runTurn, runNudge, bubblesFor, forCohort, cohortOf, forLanguage, languageOf, uiText, cardText, handoffUrl, fallbackUrl, MAX_USER_CHARS, topicPromptLine, stageFor,
+  load, buildContext, newSession, openingBubbles, chartIntro, chartLine, runTurn, runNudge, bubblesFor, forCohort, cohortOf, forLanguage, languageOf, uiText, cardText, notifText, handoffUrl, fallbackUrl, MAX_USER_CHARS, topicPromptLine, stageFor,
 } from "../engine/engine.ts";
 import type { Loaded, Context, ChatMessage, TurnLog, OnboardLabels } from "../engine/engine.ts";
 import { statSync } from "node:fs";
@@ -188,7 +188,11 @@ function view(L: Loaded, ctx: Context | null, s: Session | null, token: string, 
     // change on its own between messages (only secondsLeft/chartShown/answered move it), so this is a reliable
     // look-ahead, unlike the answer-phase reveal which depends on what the model decides to do with their reply.
     upcomingEngageTurn: stageFor(L, s.state, left) === "engage" ? (s.state.engageTurns ?? 0) + 1 : 0,
-    ui: { ...uiText(L.cfg, ctx), card_text: cardText(L.cfg, ctx, s.state.currentTopic ?? ctx.user.last_topic ?? null) },
+    ui: {
+      ...uiText(L.cfg, ctx),
+      card_text: cardText(L.cfg, ctx, s.state.currentTopic ?? ctx.user.last_topic ?? null),
+      notif_text: notifText(L.cfg, ctx, s.state.currentTopic ?? ctx.user.last_topic ?? null),
+    },
     messages: s.messages,
     secondsLeft: left,
     closed: s.state.closed || left <= 0,

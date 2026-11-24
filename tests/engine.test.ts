@@ -7,8 +7,8 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import {
   load, validateConfig, assignArm, buildContext, newSession, buildSystemPrompt,
-  openingBubbles, closingBubbles, chartLine, route, guardReply, runTurn, uiText, handoffUrl, cardText, bubblesFor, forCohort, cohortOf,
-  forLanguage, languageOf, say, topicPromptLine, stageFor,
+  openingBubbles, closingBubbles, chartLine, route, guardReply, runTurn, uiText, handoffUrl, cardText, notifText, bubblesFor, forCohort, cohortOf,
+  forLanguage, languageOf, say, topicPromptLine, stageFor, detectTopic,
 } from "../src/engine/engine.ts";
 import type { UserInput, Config, LLMFn } from "../src/engine/engine.ts";
 
@@ -98,14 +98,56 @@ test("health question → doctor line", () => {
 
 test("last seconds → scripted closing, then chat is closed", () => {
   const { ctx, st } = fresh(rafeeq);
-  assert.equal(route(L, ctx, st, "aur batao", 12).kind, "closing");
-  assert.equal(route(L, ctx, st, "hello?", 8).kind, "closed");
+  assert.equal(route(L, ctx, st, "aur batao", 4).kind, "closing");
+  assert.equal(route(L, ctx, st, "hello?", 2).kind, "closed");
+});
+
+test("hook runs for a 5s window (pull_until_seconds_left: 10) right before the closing line (closing_at_seconds_left: 5)", () => {
+  const { ctx, st } = fresh(rafeeq);
+  const shown = { ...st, chartShown: true, answered: true };
+  assert.equal(stageFor(L, { ...shown, engageTurns: 4 }, 11), "engage", "just above the hook window: still engage");
+  for (const secondsLeft of [10, 8, 6]) // the hook window itself
+    assert.equal(stageFor(L, { ...shown, engageTurns: 4 }, secondsLeft), "hook", `${secondsLeft}s left should be "hook"`);
+  // route() itself takes over right at closing_at_seconds_left, before stageFor is even consulted.
+  assert.equal(route(L, ctx, { ...shown }, "kuch bhi", 5).kind, "closing");
 });
 
 test("topic switches mid-chat", () => {
   const { ctx, st } = fresh(sunita);
   route(L, ctx, st, "beta ki naukri kab lagegi", 90);
   assert.equal(st.currentTopic, "naukri");
+});
+
+test("the broadened keyword lists catch common phrasings the old 10-word lists missed", () => {
+  assert.equal(detectTopic(L.cfg, "humara engagement kab hoga"), "shaadi");
+  assert.equal(detectTopic(L.cfg, "kundli milan ho gaya hai dono taraf se"), "shaadi");
+  assert.equal(detectTopic(L.cfg, "government job ke liye exam de raha hoon"), "naukri");
+  assert.equal(detectTopic(L.cfg, "is mahine ka kharcha nikalna mushkil hai"), "paisa");
+  assert.equal(detectTopic(L.cfg, "saas se baat nahi ho rahi"), "parivaar");
+  assert.equal(detectTopic(L.cfg, "gf se baat nahi ho rahi"), "pyaar");
+  assert.equal(detectTopic(L.cfg, "tabiyat thik nahi lag rahi"), "sehat");
+});
+
+test("detectTopic tolerates a close misspelling of a long word, but never fuzzy-matches a short one", () => {
+  assert.equal(detectTopic(L.cfg, "meri marrage kab hogi"), "shaadi", "one-letter-off spelling of a long (8+ letter) word still matches");
+  assert.equal(detectTopic(L.cfg, "promotin milega kya"), "naukri", "same, for another long word");
+  assert.equal(detectTopic(L.cfg, "nukri kab lagegi"), "naukri", "a common short-word typo is listed explicitly, not left to fuzzy matching");
+  assert.equal(detectTopic(L.cfg, "aap kaisi hain"), null, "an unrelated short word must never fuzzy-match");
+  assert.equal(detectTopic(L.cfg, "ghas kaat raha hoon"), null, "a short keyword (ghar) is never fuzzy, even one letter off");
+});
+
+test("regression: short, everyday words must never fuzzy-collide with a short topic keyword", () => {
+  // Found while stress-testing the fuzzy pass: at 1-letter slack, "paisa"/"paise"/"pyaar"/"baccha"/"karza" (all
+  // 5-6 letters) are each one edit away from an extremely common, unrelated word — "kaise"/"kaisa"/"aisa"/
+  // "waise" (how/like-this), "yaar" (dude/friend), "accha" (good), "karta" (does) — so ordinary small talk was
+  // being mis-tagged as a topic (and, worse, silently skipping the "what do you want to know" re-ask). Fuzzy
+  // matching is now only enabled for keywords over 6 letters (see fuzzySlack in engine.ts).
+  for (const text of ["kaise ho", "kaisa hai", "waise bhi", "nahi pata yaar", "bahut accha laga", "dobara try karta hoon"])
+    assert.equal(detectTopic(L.cfg, text), null, `"${text}" must not resolve to a topic`);
+  // "bhai"/"behen"/"beta"/"beti" were considered for parivaar but left out for the same reason: in everyday
+  // texting they're at least as often a casual term of address as an actual mention of family.
+  for (const text of ["theek hai bhai", "thanks beta", "kya haal hai behen"])
+    assert.equal(detectTopic(L.cfg, text), null, `"${text}" (casual address, no real topic) must not resolve to a topic`);
 });
 
 // ── Reply guard ──
@@ -375,7 +417,7 @@ test("each reply has a job: gather context first, then answer, then engage, then
   assert.match(buildSystemPrompt(L, ctx, st, 2, 110), /very first message and you don't yet know enough/);
   const shown = { ...st, chartShown: true, answered: true };
   assert.match(buildSystemPrompt(L, ctx, { ...shown, engageTurns: 1 }, 3, 90), /ONE short question/);
-  assert.match(buildSystemPrompt(L, ctx, shown, 3, 15), /ONE open thread/);
+  assert.match(buildSystemPrompt(L, ctx, shown, 3, 8), /ONE open thread/);
   assert.match(buildSystemPrompt(L, ctx, st, 2, 90, true), /gone quiet[\s\S]*Carry on by yourself/);
   assert.match(buildSystemPrompt(L, ctx, { ...shown, answered: false }, 3, 90), /Give the real answer now/,
     "if Sitara opened the chart herself, their first question still gets the real answer (stage \"answer\", not \"gather\" again — chartShown is already true)");
@@ -439,7 +481,7 @@ test("engage carries a doubt-creating line every 3rd turn once the fixed ladder 
   }
   // Not during "answer" or "hook", even if engageTurns happens to land on a "doubt" value.
   assert.doesNotMatch(buildSystemPrompt(L, ctx, { ...shown, answered: false, engageTurns: 6 }, 3, 90), /doubt-creating line/);
-  assert.doesNotMatch(buildSystemPrompt(L, ctx, { ...shown, engageTurns: 6 }, 3, 15), /doubt-creating line/, "stage \"hook\" has its own open-thread behaviour already");
+  assert.doesNotMatch(buildSystemPrompt(L, ctx, { ...shown, engageTurns: 6 }, 3, 8), /doubt-creating line/, "stage \"hook\" has its own open-thread behaviour already");
 });
 
 test("the doubt-rhythm counter advances even when the model call fails (the bug: a fallback used to silently skip it)", async () => {
@@ -501,6 +543,16 @@ test("the hand-off card names their topic; no topic or health → the generic ho
   const t = clone(); t.card_text_by_topic = { shaadi: "{name} ji, shaadi" };
   assert.equal(cardText(t, fresh(rafeeq).ctx, "shaadi"), "Rohan ji, shaadi");
   const c = clone(); c.card_text_by_topic = { cricket: "x" };
+  assert.match(validateConfig(c, L.template).join(), /not a topic/);
+});
+
+test("the top notification has its own copy, same topic naming as the hand-off card", () => {
+  assert.match(notifText(L.cfg, fresh(rafeeq).ctx, "shaadi"), /Rohan ji, apni shaadi ke exact details jaanne ke liye chat jaari rakhiye/);
+  assert.match(notifText(L.cfg, fresh(rafeeq).ctx, "naukri"), /Rohan ji, apni naukri ke exact details jaanne ke liye chat jaari rakhiye/);
+  for (const t of [null, "sehat"]) assert.match(notifText(L.cfg, fresh(rafeeq).ctx, t), /Rohan ji, exact details jaanne ke liye apni chat jaari rakhiye/);
+  const t = clone(); t.notif_text_by_topic = { shaadi: "{name} ji, shaadi" };
+  assert.equal(notifText(t, fresh(rafeeq).ctx, "shaadi"), "Rohan ji, shaadi");
+  const c = clone(); c.notif_text_by_topic = { cricket: "x" };
   assert.match(validateConfig(c, L.template).join(), /not a topic/);
 });
 

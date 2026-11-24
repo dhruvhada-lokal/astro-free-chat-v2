@@ -119,7 +119,7 @@ test("the free time starts when the chat opens (clock_starts: open)", async () =
 });
 
 test("a message in the last seconds gets the closing line, then the chat ends", async () => {
-  process.env.DEV_FREE_SECONDS = "41"; // above pull_until (20); closing at 15 s left
+  process.env.DEV_FREE_SECONDS = "41"; // above the hook window (6-10s left); closing at 5 s left
   try {
     await getStore().upsertUsers([user("u_close_02")]);
     await chat.startOrResume("u_close_02");
@@ -127,7 +127,7 @@ test("a message in the last seconds gets the closing line, then the chat ends", 
     assert.ok(first.ok && first.messages.some((m) => m.role === "kundli"));
     // jump to the last seconds: move this test session's clock back
     await getStore().withSession("u_close_02", async (s) => {
-      s!.clock_started_at = new Date(Date.now() - 27_000).toISOString();
+      s!.clock_started_at = new Date(Date.now() - 37_000).toISOString();
       return { session: s, result: null };
     });
     const before = (await getStore().getSession("u_close_02"))!.messages.length;
@@ -248,7 +248,7 @@ test("quiet at the end: the closing line arrives by itself, then nothing more", 
   await getStore().upsertUsers([user("u_quiet_02")]);
   await chat.startOrResume("u_quiet_02");
   await chat.sendMessage("u_quiet_02", "shaadi kab?");
-  await quietFor("u_quiet_02", 1_000, 106_000); // 14 s left
+  await quietFor("u_quiet_02", 1_000, 116_000); // 4 s left
   const r = await chat.nudge("u_quiet_02");
   assert.ok(r.ok);
   assert.deepEqual(r.messages.map((m) => m.text), ["Rohan ji, ek aur zaroori baat dikh rahi hai…"]);
@@ -256,15 +256,19 @@ test("quiet at the end: the closing line arrives by itself, then nothing more", 
   assert.equal((await chat.nudge("u_quiet_02")).ok, false);
 });
 
-test("quiet at the end after an open thread: the chat just closes, no second hook", async () => {
+test("quiet at the end after an open thread: the closing line still fires — hook and closing are separate, both guaranteed", async () => {
+  // Regression: runNudge() used to skip the closing line entirely whenever an earlier "hook" reply had already
+  // planted an open thread (st.hooked), so a chat that went quiet right after hook — never sending another
+  // message to trigger route()'s own (always-unconditional) closing branch — silently ended with no closing
+  // line at all. Hook (pull_until_seconds_left) and closing (closing_at_seconds_left) are two separate,
+  // guaranteed moments; neither stands in for the other.
   await getStore().upsertUsers([user("u_quiet_03")]);
   await chat.startOrResume("u_quiet_03");
   await chat.sendMessage("u_quiet_03", "shaadi kab?");
-  await getStore().withSession("u_quiet_03", async (s) => { s!.state.hooked = true; return { session: s, result: null }; });
-  await quietFor("u_quiet_03", 1_000, 106_000);
+  await quietFor("u_quiet_03", 1_000, 116_000); // 4 s left
   const r = await chat.nudge("u_quiet_03");
   assert.ok(r.ok);
-  assert.equal(r.messages.length, 0);
+  assert.deepEqual(r.messages.map((m) => m.text), ["Rohan ji, ek aur zaroori baat dikh rahi hai…"]);
   assert.equal(r.view.closed, true);
 });
 

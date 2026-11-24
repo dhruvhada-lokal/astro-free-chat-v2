@@ -108,12 +108,14 @@ export default function Chat({ token }: { token: string }) {
   const [shown, setShown] = useState<Msg[]>([]);
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
   const [msLeft, setMsLeft] = useState(0);
   const [loadError, setLoadError] = useState(false);
   const [sendError, setSendError] = useState(false);
   const [cardAt, setCardAt] = useState<number | null>(null); // when the hand-off card appeared (starts the button countdown)
   const [cardVisible, setCardVisible] = useState(false); // the card itself, shown only after the typing beat below
+  const [topNotifAuto, setTopNotifAuto] = useState(false); // real flow: 7.5s after the hand-off card appears
+  const [testTopNotif, setTestTopNotif] = useState(false); // local testing only: force the top notification
+  const [testSheet, setTestSheet] = useState(false);       // local testing only: force the bottom sheet
   const [now, setNow] = useState(0);
   const [pickingLang, setPickingLang] = useState(false);
   // When the opening greeting finished revealing (or a resumed chat loaded) — the reference point for the
@@ -276,9 +278,20 @@ export default function Chat({ token }: { token: string }) {
   const crisis = !!view?.crisis;
   const active = !!view && view.status !== "invalid";
   const timeUp = left <= 0;
-  const locked = !view || view.closed || timeUp;   // input closed
-  const showSheet = active && !crisis && !!view?.clockStarted && (left <= view.handoffAt || view.closed);
+  // Not "|| view.closed": same reasoning as showSheet below — view.closed also goes true the moment the closing
+  // line fires (timing.closing_at_seconds_left), well before the chat should visually look "over". Crisis still
+  // locks immediately (st.crisis and st.closed are always set together — see route()), everything else waits
+  // for real timeUp.
+  const locked = !view || crisis || timeUp;   // input closed
+  // Not "|| view.closed": the closing line (timing.closing_at_seconds_left) is the only other thing that sets
+  // view.closed before time's actually up, and it's deliberately earlier than handoffAt — the card should
+  // wait for the real seconds-left threshold, not jump the moment the closing line goes out.
+  const showSheet = active && !crisis && !!view?.clockStarted && left <= view.handoffAt;
   const urgent = active && !!view?.clockStarted && !timeUp && left <= view.closingAt;
+  // testSheet/testTopNotif (local testing only) force either call-out on regardless of the real timer, so the
+  // two can be tried independently without waiting for the chat to actually reach hand-off time.
+  const sheetShown = (showSheet && cardVisible) || testSheet;
+  const topNotifShown = (cardVisible && topNotifAuto) || testTopNotif;
 
   // Sitara "types" for a beat the moment the clock runs out, like she's sending one more message — then the
   // hand-off card appears instead (see .sheet's translucent styling: it reads as that message, unreadable).
@@ -297,6 +310,15 @@ export default function Chat({ token }: { token: string }) {
     }, HANDOFF_TYPING_MS);
     return () => clearTimeout(id);
   }, [showSheet, token]);
+
+  // The top "notification" call-out: a separate, quieter nudge than the bottom sheet — appears 7.5s after the
+  // hand-off card does. The "you've unlocked a special offer" strip is folded into it (see topNotifClaimRow
+  // below) rather than left as its own banner underneath, so there's nothing left for it to cover.
+  useEffect(() => {
+    if (!cardVisible) return;
+    const id = setTimeout(() => setTopNotifAuto(true), 7500);
+    return () => clearTimeout(id);
+  }, [cardVisible]);
 
   // Ticks the button countdown (only while it runs).
   useEffect(() => {
@@ -412,13 +434,25 @@ export default function Chat({ token }: { token: string }) {
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending.current || locked) return;
+    if (!text || locked) return;
+    // A message is already being sent (or Sitara's still typing out her reply to it) — the server only ever
+    // handles one message at a time per chat anyway, so disabling the button for that felt locked/frustrating.
+    // Their bubble still shows, like it sent — it just never actually reaches the bot, and never gets a reply.
+    // Nothing about the bot's own turn-taking changes.
+    if (sending.current) {
+      lastActivity.current = Date.now();
+      draftRef.current = "";
+      setDraft("");
+      setSendError(false);
+      stickToBottom.current = true;
+      setShown((prev) => [...prev, { role: "user", text, at: "" }]);
+      return;
+    }
     sending.current = true;
     lastActivity.current = Date.now();
     draftRef.current = "";
     setDraft("");
     setSendError(false);
-    setBusy(true);
     stickToBottom.current = true;
     setShown((prev) => [...prev, { role: "user", text, at: "" }]);
     try {
@@ -450,7 +484,6 @@ export default function Chat({ token }: { token: string }) {
       setSendError(true);
     } finally {
       sending.current = false;
-      setBusy(false);
     }
   };
 
@@ -641,7 +674,8 @@ export default function Chat({ token }: { token: string }) {
         )}
       </header>
 
-      {crisis ? null : (
+      {/* Once the top notification is up, the offer banner lives inside it (topNotifClaimRow) instead of here. */}
+      {crisis || topNotifShown ? null : (
         <div className={`${s.strip} ${showSheet ? s.stripWin : ""}`} key={showSheet ? "win" : "gift"}>
           <span className={s.stripIcon} aria-hidden>{showSheet ? "🎉" : "🎁"}</span>
           <span className={s.stripText}>{showSheet ? ui.strip_reveal.replace(/^🎉\s*/, "") : ui.strip_during.replace(/^🎁\s*/, "")}</span>
@@ -709,7 +743,46 @@ export default function Chat({ token }: { token: string }) {
       </div>
 
       <Confetti fire={cardVisible && left > 0} />  {/* the live reveal only, not when reopening an ended chat */}
-      {showSheet && cardVisible ? (
+
+      {topNotifShown ? (
+        <div className={s.topNotif} role="status">
+          <a
+            className={s.topNotifRow}
+            href={view.handoffUrl}
+            onClick={(e) => { beacon(token, "cta_tapped", { seconds_left: left, from: "notif" }); openApp(e, view.handoffUrl, view.fallbackUrl); }}
+          >
+            <Avatar persona={view.persona} className={s.topNotifAvatar} />
+            <div className={s.topNotifBody}>
+              <div className={s.topNotifTitle}>{view.persona.name}</div>
+              <div className={s.topNotifText}>{ui.notif_text}</div>
+            </div>
+          </a>
+          {crisis ? null : (
+            <div className={s.topNotifClaimRow}>
+              <span className={s.topNotifClaimIcon} aria-hidden>{showSheet ? "🎉" : "🎁"}</span>
+              <span className={s.topNotifClaimText}>{showSheet ? ui.strip_reveal.replace(/^🎉\s*/, "") : ui.strip_during.replace(/^🎁\s*/, "")}</span>
+              {showSheet ? (
+                <a className={s.topNotifClaimCta} href={view.handoffUrl} onClick={(e) => { beacon(token, "cta_tapped", { seconds_left: left, from: "strip" }); openApp(e, view.handoffUrl, view.fallbackUrl); }}>
+                  {ui.strip_cta}
+                </a>
+              ) : null}
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {view.canRestart ? (
+        <div className={s.devToolbar}>
+          <button type="button" className={s.devBtn} onClick={() => setTestTopNotif((v) => !v)}>
+            {testTopNotif ? "Hide" : "Show"} top notif (test)
+          </button>
+          <button type="button" className={s.devBtn} onClick={() => setTestSheet((v) => !v)}>
+            {testSheet ? "Hide" : "Show"} bottom sheet (test)
+          </button>
+        </div>
+      ) : null}
+
+      {sheetShown ? (
         <section className={s.sheet} aria-label={ui.cta_label}>
           <div className={s.handle} aria-hidden />
           <div className={s.sheetHead}>
@@ -752,7 +825,9 @@ export default function Chat({ token }: { token: string }) {
             autoComplete="off"
             enterKeyHint="send"
           />
-          <button className={s.send} type="submit" disabled={busy || !draft.trim()} aria-label="Send">
+          {/* Not disabled by "busy" any more — see send(): a tap while one is already in flight is a harmless
+              no-op, so there's no reason for the button itself to look locked. */}
+          <button className={s.send} type="submit" disabled={!draft.trim()} aria-label="Send">
             <SendIcon />
           </button>
         </form>

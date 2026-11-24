@@ -34,5 +34,5 @@ for (const text of process.argv.slice(2)) {
   history.push(...bubbles.map((b) => ({ role: "ai" as const, text: b })));
   if (st.closed) break;
   left -= 14; // a quick typer
-  if (left <= L.cfg.timing.closing_at_seconds_left && !st.closed) { if (!st.hooked) console.log(`   (${left}s left) A: ${closingBubbles(L.cfg, ctx).join(" | ")}`); break; }
+  if (left <= L.cfg.timing.closing_at_seconds_left && !st.closed) { console.log(`   (${left}s left) A: ${closingBubbles(L.cfg, ctx).join(" | ")}`); break; }
 }

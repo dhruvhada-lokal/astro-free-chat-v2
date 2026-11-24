@@ -103,6 +103,7 @@ export type Config = {
   source?: import("../lib/sync.ts").SourceConfig;
   ui: Record<string, string>;
   card_text_by_topic?: Record<string, string>;
+  notif_text_by_topic?: Record<string, string>;
   reply_instructions?: Partial<Record<"answer" | "start" | "gather" | "engage" | "engage_doubt" | "engage_bridge" | "hook" | "hook_after_ladder" | "quiet" | "engage_cliffhanger" | "engage_stall", string>>;
 };
 
@@ -116,7 +117,6 @@ export type SessionState = {
   turns: number;
   chartShown?: boolean;   // the kundli card goes out with the first real answer
   answered?: boolean;     // their first question has had its real answer
-  hooked?: boolean;       // the open thread has been planted (the scripted closing line is then not needed)
   clarifyRounds?: number; // how many of stage "gather"'s OWN clarifying questions have been used — see MAX_CLARIFY_ROUNDS.
                            // Separate from noTopicRounds below: a "hi" with literally nothing to go on must not eat into
                            // the budget meant for "they gave a topic, still need one more detail" — those are different.
@@ -160,7 +160,7 @@ const LINK_VARS = ["token", "prompt_version", "cohort", "arm", "balance"];
 const INSIGHT_VARS = ["window_for_topic"];
 const REQUIRED_UI = [
   "joining", "joined", "details_message", "tob_unknown", "kundli_caption", "kundli_lagna_chart", "kundli_moon_chart", "moon_sign_label", "dasha_label", "day_chip",
-  "strip_during", "strip_reveal", "time_up", "time_up_status", "card_text", "cta_label", "cta_subtext",
+  "strip_during", "strip_reveal", "time_up", "time_up_status", "card_text", "notif_text", "cta_label", "cta_subtext",
   "card_offer", "status_online", "status_typing", "strip_cta", "input_placeholder", "send_error", "ended_title", "invalid_title", "invalid_text",
 ];
 
@@ -328,7 +328,10 @@ export function validateConfig(cfg: Config, template: string): string[] {
   need(t.handoff_card_at_seconds_left >= 0, "timing.handoff_card_at_seconds_left must be >= 0");
   need(t.llm_timeout_ms >= 1000, "timing.llm_timeout_ms looks too low (< 1000)");
   need(["open", "first_message"].includes(t.clock_starts), 'timing.clock_starts must be "open" or "first_message"');
-  need(t.pull_until_seconds_left > t.closing_at_seconds_left, "timing.pull_until_seconds_left must be above closing_at_seconds_left");
+  // pull_until_seconds_left above closing_at_seconds_left gives "hook" a real window before closing cuts in;
+  // at or below it, stageFor() never returns "hook" at all — engage (with its own cliffhanger/stall ladder)
+  // runs uninterrupted all the way to the closing line. Both are valid; which one is current is a deliberate choice.
+  need(t.pull_until_seconds_left >= 0, "timing.pull_until_seconds_left must be >= 0");
   need(t.cta_countdown_seconds === undefined || (Number.isInteger(t.cta_countdown_seconds) && t.cta_countdown_seconds >= 0 && t.cta_countdown_seconds <= 30),
     "timing.cta_countdown_seconds must be 0–30");
   need(t.idle_nudge_seconds === 0 || (t.idle_nudge_seconds >= 10 && t.idle_nudge_seconds <= 60), "timing.idle_nudge_seconds must be 0 (off) or 10–60");
@@ -418,6 +421,10 @@ export function validateConfig(cfg: Config, template: string): string[] {
   for (const [k, text] of Object.entries(cfg.card_text_by_topic ?? {})) {
     need(cfg.topics?.[k], `card_text_by_topic.${k} is not a topic in topics`);
     for (const v of placeholders(text)) need(UI_VARS.includes(v), `card_text_by_topic.${k} uses unknown {${v}}`);
+  }
+  for (const [k, text] of Object.entries(cfg.notif_text_by_topic ?? {})) {
+    need(cfg.topics?.[k], `notif_text_by_topic.${k} is not a topic in topics`);
+    for (const v of placeholders(text)) need(UI_VARS.includes(v), `notif_text_by_topic.${k} uses unknown {${v}}`);
   }
   need(typeof cfg.persona?.name === "string" && cfg.persona.name.trim().length > 0, "persona.name is missing");
   const avatar = cfg.persona?.avatar_url ?? "";
@@ -849,6 +856,12 @@ export function cardText(cfg: Config, ctx: Context, topic: string | null): strin
   return say(byTopic ?? cfg.ui.card_text, ctx.vars);
 }
 
+/** The top notification call-out's line (v3) — same topic naming as cardText, its own separate copy. */
+export function notifText(cfg: Config, ctx: Context, topic: string | null): string {
+  const byTopic = topic ? cfg.notif_text_by_topic?.[topic] : undefined;
+  return say(byTopic ?? cfg.ui.notif_text, ctx.vars);
+}
+
 /** Where the CTA goes: straight into a chat if they have balance, otherwise recharge first. Carries attribution. */
 export function handoffUrl(L: Loaded, token: string, user?: Pick<UserInput, "cohort" | "wallet_balance">): string {
   const hasBalance = Number(user?.wallet_balance ?? 0) > 0;
@@ -882,9 +895,44 @@ export type Route =
 const rx = (p: string) => new RegExp(p, "iu");
 const escapeRx = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const curr = [i];
+    for (let j = 1; j <= b.length; j++)
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = curr;
+  }
+  return prev[b.length];
+}
+// How many spelling differences still count as "close enough" to a keyword, by that keyword's own length.
+// Never fuzzy at 6 letters or under: short, everyday Hindi words sit only one edit apart from each other
+// constantly ("kaise"~"paise", "yaar"~"pyaar", "accha"~"baccha", "karta"~"karza") — real measurements against
+// ordinary chat, not guesses. Fuzzy typo tolerance is only safe, and only needed, for longer, less-common
+// loanwords ("marriage", "engagement", "admission") that someone genuinely unfamiliar with might misspell.
+const fuzzySlack = (len: number) => (len <= 6 ? 0 : len <= 9 ? 1 : 2);
+
 export function detectTopic(cfg: Config, text: string): string | null {
   for (const [topic, words] of Object.entries(cfg.topics))
     if (words.some((w) => new RegExp(`\\b${escapeRx(w)}\\b`, "iu").test(text))) return topic;
+  // Fuzzy fallback: catches a misspelled single word (e.g. "marrage", "nukri") the exact pass above missed.
+  // Multi-word phrases ("love marriage", "government job") are never fuzzy-matched — only single keywords,
+  // and only ones long enough that a close spelling still can't collide with some unrelated word.
+  const tokens = text.toLowerCase().match(/\p{L}+/gu) ?? [];
+  if (tokens.length) {
+    for (const [topic, words] of Object.entries(cfg.topics)) {
+      for (const w of words) {
+        if (w.includes(" ")) continue;
+        const slack = fuzzySlack(w.length);
+        if (!slack) continue;
+        const lw = w.toLowerCase();
+        if (tokens.some((t) => Math.abs(t.length - lw.length) <= slack && levenshtein(t, lw) <= slack)) return topic;
+      }
+    }
+  }
   return null;
 }
 
@@ -1110,7 +1158,6 @@ async function generate(
       st.lastAsked = g.questions > 0;
       if (stage === "answer") st.answered = true;
       if (stage === "gather") { if (clarifying) st.clarifyRounds = (st.clarifyRounds ?? 0) + 1; else st.answered = true; }
-      if (stage === "hook") st.hooked = true;
       log.clarifying = clarifying;
       return g.bubbles;
     }
@@ -1200,8 +1247,11 @@ export async function runNudge(
   if (secondsLeft <= L.cfg.timing.closing_at_seconds_left) {
     st.closed = true;
     const log = newLog(L, ctx, st, "closing_quiet", "", secondsLeft);
-    // If Sitara already left them on an open thread, a second one would read as a script: just close.
-    log.bubbles = st.hooked ? [] : closingBubbles(L.cfg, ctx);
+    // Always sent, the same as route()'s own closing branch — hook and the closing line are two separate,
+    // guaranteed moments (timing.pull_until_seconds_left and timing.closing_at_seconds_left), not one standing
+    // in for the other. Skipping this because hook already fired silently ended the chat with no closing line
+    // at all whenever the automatic quiet-nudge (not a user message) was what crossed the closing threshold.
+    log.bubbles = closingBubbles(L.cfg, ctx);
     return { bubbles: log.bubbles, log };
   }
   const log = newLog(L, ctx, st, "quiet", "", secondsLeft);
