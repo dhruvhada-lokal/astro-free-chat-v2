@@ -661,8 +661,8 @@ languages:
         - '\b(ai|bot)\s*aano\b'
 
 # Native-script display labels for the "pick your language" screen (Phase 4) — shown before anyone has chosen a
-# language, so these must be readable without relying on any other language. Not used anywhere else (the chat
-# itself defaults to Romanized script per languages.<key>, same as Hinglish).
+# language, so these must be readable without relying on any other language. Also doubles as the {{language}}
+# the LLM is told to reply in (src/lib/sync.ts, chooseLanguage in chat.ts) — must stay in sync with that use.
 # Brand shown on the picker screen itself — this is before anyone has met Sitara, so it's AstroLokal, not the
 # persona. "" for the logo shows an initial "A" (same fallback rule as persona.avatar_url); swap in the real
 # logo file (drop it in public/, e.g. "/logo/astrolokal.png") or an https:// link whenever it's ready.

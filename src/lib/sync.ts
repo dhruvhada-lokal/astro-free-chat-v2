@@ -202,7 +202,8 @@ export function rowsToUsers(
         name,
         gender: /^f/i.test(str(r[c.gender])) ? "female" : /^m/i.test(str(r[c.gender])) ? "male" : null,
         dob: dob ?? "", tob: tob || null, pob: pobText || null,
-        language: "Hinglish",
+        // Must track chat_language, or the LLM keeps replying in Hinglish while the scripted/UI text is ta/te/ml.
+        language: (chatLanguage && cfg.language_picker_labels?.[chatLanguage]) || "Hinglish",
         moon_sign: chart?.moon_sign ?? "", mahadasha: chart?.mahadasha ?? "", antardasha: chart?.antardasha ?? "", lagna,
         // Without a birth time the Moon's degree is uncertain, so it isn't drawn; slow planets are placed as usual.
         planets: !chart ? null : tob ? chart.planets : Object.fromEntries(Object.entries(chart.planets).filter(([k]) => k !== "Mo")),

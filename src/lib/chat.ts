@@ -285,7 +285,8 @@ export async function chooseLanguage(token: string, language: string): Promise<V
     const L0 = forCohort(base, cohortOf(base.cfg, user));
     return languageChoiceView(L0, buildContext(L0.cfg, user), token);
   }
-  if (!user.chat_language) await store.upsertUsers([{ ...user, chat_language: key }]);
+  // language tracks chat_language here too (see sync.ts), so the LLM replies in the picked language, not Hinglish.
+  if (!user.chat_language) await store.upsertUsers([{ ...user, chat_language: key, language: base.cfg.language_picker_labels?.[key] ?? "Hinglish" }]);
   return startOrResume(token);
 }
 

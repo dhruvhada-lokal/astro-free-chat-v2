@@ -89,6 +89,14 @@ test("chat_language from the query (language_map) skips the in-chat picker; unma
   assert.equal(lang("3"), null);
   assert.equal(lang("4"), null);
   assert.equal(lang("5"), null);
+  // user.language (the {{language}} the LLM is told to reply in) must track chat_language, or a ta/te/ml chat
+  // gets Tamil/Telugu/Malayalam scripted text but Hinglish free-generated replies.
+  const promptLang = (id: string) => users.find((u) => u.user_id === id)!.user.language;
+  assert.equal(promptLang("1"), "Hindi");
+  assert.equal(promptLang("2"), "Tamil");
+  assert.equal(promptLang("3"), "Hinglish");
+  assert.equal(promptLang("4"), "Hinglish");
+  assert.equal(promptLang("5"), "Hinglish");
 });
 
 test("dates, times and places in the formats databases use", () => {
