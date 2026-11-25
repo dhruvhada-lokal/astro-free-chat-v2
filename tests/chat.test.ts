@@ -289,10 +289,26 @@ test("choosing a language saves it (once) and opens the chat in it", async () =>
   assert.equal(v.status, "active");
   assert.equal((await getStore().getUser("u_lang_002"))?.chat_language, "ta");
   assert.match(v.messages[3]?.text ?? "", /Vanakkam/, "the opening is now in Tamil");
+  // user.language (the {{language}} the LLM is told to reply in) must be set too, or free-generated
+  // replies stay in Hinglish even though the scripted opening above is in Tamil.
+  assert.equal((await getStore().getUser("u_lang_002"))?.language, "Tamil");
   // choosing again (e.g. a retried request) never overwrites an already-made choice
   const again = await chat.chooseLanguage("u_lang_002", "te");
   assert.equal((await getStore().getUser("u_lang_002"))?.chat_language, "ta");
+  assert.equal((await getStore().getUser("u_lang_002"))?.language, "Tamil");
   assert.equal(again.status, "active");
+});
+
+test("choosing Telugu or Malayalam sets user.language to match, same as Tamil", async () => {
+  await getStore().upsertUsers([{ ...user("u_lang_005"), chat_language: null }]);
+  await chat.chooseLanguage("u_lang_005", "te");
+  assert.equal((await getStore().getUser("u_lang_005"))?.chat_language, "te");
+  assert.equal((await getStore().getUser("u_lang_005"))?.language, "Telugu");
+
+  await getStore().upsertUsers([{ ...user("u_lang_006"), chat_language: null }]);
+  await chat.chooseLanguage("u_lang_006", "ml");
+  assert.equal((await getStore().getUser("u_lang_006"))?.chat_language, "ml");
+  assert.equal((await getStore().getUser("u_lang_006"))?.language, "Malayalam");
 });
 
 test("an unrecognised language choice is ignored: picker shown again, nothing saved", async () => {

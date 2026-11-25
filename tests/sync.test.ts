@@ -82,6 +82,8 @@ test("chat_language from the query (language_map) skips the in-chat picker; unma
     row({ user_id: "3", chat_language: "Klingon" }), // unmapped → unset, picker shows
     row({ user_id: "4", chat_language: "" }), // blank → unset
     row({ user_id: "5" }), // column missing from this row entirely → unset
+    row({ user_id: "6", chat_language: "Telugu" }),
+    row({ user_id: "7", chat_language: "malayalam" }), // case-insensitive
   ], opts);
   const lang = (id: string) => users.find((u) => u.user_id === id)!.user.chat_language;
   assert.equal(lang("1"), "hinglish");
@@ -89,6 +91,8 @@ test("chat_language from the query (language_map) skips the in-chat picker; unma
   assert.equal(lang("3"), null);
   assert.equal(lang("4"), null);
   assert.equal(lang("5"), null);
+  assert.equal(lang("6"), "te");
+  assert.equal(lang("7"), "ml");
   // user.language (the {{language}} the LLM is told to reply in) must track chat_language, or a ta/te/ml chat
   // gets Tamil/Telugu/Malayalam scripted text but Hinglish free-generated replies.
   const promptLang = (id: string) => users.find((u) => u.user_id === id)!.user.language;
@@ -97,6 +101,8 @@ test("chat_language from the query (language_map) skips the in-chat picker; unma
   assert.equal(promptLang("3"), "Hinglish");
   assert.equal(promptLang("4"), "Hinglish");
   assert.equal(promptLang("5"), "Hinglish");
+  assert.equal(promptLang("6"), "Telugu");
+  assert.equal(promptLang("7"), "Malayalam");
 });
 
 test("dates, times and places in the formats databases use", () => {
